@@ -1,3 +1,11 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import joblib
+import json
+import os
+import plotly.graph_objects as go
+
 # ── Compatibility patch for autogluon feature generator ───────────────────────
 # Pickled generator objects are missing 'passthrough' added in newer AG builds.
 # Patching transform() to inject the default value before AG's code reads it.
@@ -17,14 +25,6 @@ try:
     AbstractFeatureGenerator.transform = _patched_transform
 except Exception:
     pass
-
-import streamlit as st
-import pandas as pd
-import numpy as np
-import joblib
-import json
-import os
-import plotly.graph_objects as go
 
 st.set_page_config(page_title='Aura AI | Diabetes Clinical Intelligence',
     page_icon='🩺', layout='wide', initial_sidebar_state='expanded')
