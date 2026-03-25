@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+joblib
+plotly
+autogluon.tabular
+mistralai
+fpdf
+shap
+matplotlib
