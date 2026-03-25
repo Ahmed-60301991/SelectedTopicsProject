@@ -66,30 +66,53 @@ ZERO_IMPUTE_COLS = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI
 
 
 @st.cache_resource
+@st.cache_resource
 def load_artifacts():
-    """Load AutoGluon predictor + supporting artefacts from models/."""
+    """Load AutoGluon predictor + supporting artefacts from models/ with Linux-compatibility repair."""
     try:
         from autogluon.tabular import TabularPredictor
+        import pandas as pd
+        import json
 
+        # 1. Load basic metadata
         with open('models/metadata.json') as f:
             meta = json.load(f)
 
+        # 2. Load Predictor with architecture-bypass flags
         predictor_path = meta.get('predictor_path', 'AutogluonModels/ag_model')
-        predictor = TabularPredictor.load(predictor_path, verbosity=0, require_py_version_match=False, require_version_match=False)
-        specific_model = meta['best_model']   # e.g. 'NeuralNetFastAI_r4_BAG_L1'
-        threshold      = meta['threshold']    # 0.50
+        predictor = TabularPredictor.load(
+            predictor_path, 
+            verbosity=0, 
+            require_py_version_match=False, 
+            require_version_match=False
+        )
+
+        # 3. REPAIR: Fix the 'AttributeError' by re-fitting the feature generator
+        # This allows the Mac-trained model to understand Linux data types
+        try:
+            train_data = pd.read_csv('Training.csv')
+            # We only need a small sample to initialize the internal 'passthrough' logic
+            predictor.feature_generator.fit(train_data.head(100))
+        except Exception as repair_error:
+            st.warning(f"Feature generator repair skipped: {repair_error}")
+
+        # 4. Extract other variables from meta
+        specific_model = meta['best_model']  # e.g. 'NeuralNetFastAI_r4_BAG_L1'
+        threshold      = meta['threshold']   # 0.50
         feat_cols      = meta.get('features', [
             'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
             'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age'])
 
+        # 5. Load the leaderboard CSV
         leaderboard = pd.read_csv('models/model_leaderboard.csv')
 
         return predictor, specific_model, threshold, feat_cols, leaderboard, meta
 
-    except FileNotFoundError:
+    except Exception as e:
+        st.error(f"Critical error loading models: {e}")
         return None, None, None, None, None, {}
 
-
+# Initialize global variables
 predictor, specific_model, threshold, feat_cols, leaderboard_df, meta = load_artifacts()
 MODELS_LOADED = predictor is not None
 
