@@ -66,9 +66,8 @@ ZERO_IMPUTE_COLS = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI
 
 
 @st.cache_resource
-@st.cache_resource
 def load_artifacts():
-    """Load AutoGluon predictor with deep internal attribute injection for Linux compatibility."""
+    """Load AutoGluon predictor with recursive attribute injection for total Linux compatibility."""
     try:
         from autogluon.tabular import TabularPredictor
         import pandas as pd
@@ -87,35 +86,35 @@ def load_artifacts():
             require_version_match=False
         )
 
-        # 3. INTERNAL REPAIR: Inject missing 'passthrough' attributes
-        try:
-            # On some versions, it's predictor._learner.feature_generator
-            # On others, it's predictor.feature_generator
-            fg = getattr(predictor, 'feature_generator', getattr(predictor._learner, 'feature_generator', None))
-            
-            if fg is not None:
-                # Iterate through all internal generators in the pipeline
-                for generator in fg.generators:
-                    for gen in generator:
-                        # Force-add the attributes the Linux version expects
-                        if not hasattr(gen, 'passthrough'):
-                            gen.passthrough = False
-                        if not hasattr(gen, 'passthrough_stage'):
-                            gen.passthrough_stage = 'first'
-                        if not hasattr(gen, 'passthrough_features'):
-                            gen.passthrough_features = []
+        # 3. RECURSIVE REPAIR: Force-inject missing attributes into ALL generators
+        def inject_attributes(obj):
+            """Recursively find all generators and inject missing Linux attributes."""
+            # Inject into the current object if it's a generator-like object
+            if hasattr(obj, '__dict__'):
+                if not hasattr(obj, 'passthrough'):
+                    obj.passthrough = False
+                if not hasattr(obj, 'passthrough_stage'):
+                    obj.passthrough_stage = 'first'
+                if not hasattr(obj, 'passthrough_features'):
+                    obj.passthrough_features = []
                 
-                # Re-fit on a tiny slice of data to lock in the new state
-                train_data = pd.read_csv('Training.csv')
-                fg.fit(train_data.head(5))
-            else:
-                st.warning("Could not find feature generator to repair.")
-                
-        except Exception as repair_error:
-            # We log this to the Streamlit console for you to see
-            st.info(f"Note: Generator repair status: {repair_error}")
+                # Check for nested generators in lists (like BulkFeatureGenerator)
+                if hasattr(obj, 'generators'):
+                    for g_list in obj.generators:
+                        for g in g_list:
+                            inject_attributes(g)
 
-        # 4. Extract other variables
+        try:
+            # Find the root feature generator
+            fg = getattr(predictor, 'feature_generator', getattr(predictor._learner, 'feature_generator', None))
+            if fg is not None:
+                inject_attributes(fg)
+                # We skip .fit() now because the recursion handles the attributes directly
+                st.info("Linux compatibility patch applied to feature generators.")
+        except Exception as repair_error:
+            st.warning(f"Generator repair failed: {repair_error}")
+
+        # 4. Standard extractions
         specific_model = meta['best_model']
         threshold      = meta['threshold']
         feat_cols      = meta.get('features', [
@@ -129,7 +128,6 @@ def load_artifacts():
     except Exception as e:
         st.error(f"Critical error loading models: {e}")
         return None, None, None, None, None, {}
-
 # Initialize global variables
 predictor, specific_model, threshold, feat_cols, leaderboard_df, meta = load_artifacts()
 MODELS_LOADED = predictor is not None
