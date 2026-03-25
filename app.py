@@ -65,7 +65,7 @@ GRID_Y = dict(gridcolor='rgba(255,255,255,0.05)', zerolinecolor='rgba(255,255,25
 ZERO_IMPUTE_COLS = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI']
 
 
- def load_artifacts():
+def load_artifacts():
     """Load AutoGluon predictor + supporting artefacts from models/."""
     try:
         from autogluon.tabular import TabularPredictor
