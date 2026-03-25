@@ -1,23 +1,42 @@
 try:
-    import pkg_resources          
+    import pkg_resources
 except ImportError:
     import importlib.metadata, types, sys
+
     _pkg = types.ModuleType('pkg_resources')
 
     class _Dist:
-        def __init__(self, name):
-            self.version = importlib.metadata.version(name)
+        def __init__(self, name, version):
             self.project_name = name
+            self.key          = name.lower()
+            self.version      = version
+
+    class _WorkingSet:
+        def __init__(self):
+            self.by_key = {}
+            try:
+                for d in importlib.metadata.packages_distributions():
+                    try:
+                        v = importlib.metadata.version(d)
+                        dist = _Dist(d, v)
+                        self.by_key[dist.key] = dist
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        def __iter__(self):
+            return iter(self.by_key.values())
 
     def _get_distribution(name):
-        return _Dist(name)
+        try:
+            return _Dist(name, importlib.metadata.version(name))
+        except importlib.metadata.PackageNotFoundError:
+            raise Exception(f'{name} not found')
 
-    def _require(reqs):
-        return []
-
-    _pkg.get_distribution  = _get_distribution
-    _pkg.require           = _require
-    _pkg.working_set       = []
+    _pkg.working_set          = _WorkingSet()
+    _pkg.get_distribution     = _get_distribution
+    _pkg.require              = lambda reqs: []
     _pkg.DistributionNotFound = Exception
     sys.modules['pkg_resources'] = _pkg
 
