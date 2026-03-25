@@ -1,3 +1,26 @@
+try:
+    import pkg_resources          
+except ImportError:
+    import importlib.metadata, types, sys
+    _pkg = types.ModuleType('pkg_resources')
+
+    class _Dist:
+        def __init__(self, name):
+            self.version = importlib.metadata.version(name)
+            self.project_name = name
+
+    def _get_distribution(name):
+        return _Dist(name)
+
+    def _require(reqs):
+        return []
+
+    _pkg.get_distribution  = _get_distribution
+    _pkg.require           = _require
+    _pkg.working_set       = []
+    _pkg.DistributionNotFound = Exception
+    sys.modules['pkg_resources'] = _pkg
+
 import streamlit as st
 import pandas as pd
 import numpy as np
