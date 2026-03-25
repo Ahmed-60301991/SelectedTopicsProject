@@ -9,3 +9,4 @@ mistralai
 fpdf
 shap
 matplotlib
+setuptools
