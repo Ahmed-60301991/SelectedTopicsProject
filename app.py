@@ -132,11 +132,8 @@ def prepare_df(raw: dict) -> pd.DataFrame:
     return df
 
 def predict_proba(raw: dict) -> float:
-    """Return P(diabetic) for a raw input dict."""
     df = prepare_df(raw)
-    # specific_model is None if the named model couldn't load (fallback to ensemble)
-    kwargs = {'model': specific_model} if specific_model else {}
-    return float(predictor.predict_proba(df, **kwargs).iloc[0, 1])
+    return float(predictor.predict_proba(df, model=specific_model).iloc[0, 1])
 
 
 # ── MISTRAL AI ────────────────────────────────────────────────────────────────
