@@ -5,6 +5,8 @@ import joblib
 import json
 import os
 import plotly.graph_objects as go
+import autogluon
+st.sidebar.write(f"AutoGluon version: {autogluon.__version__}")
 
 st.set_page_config(page_title='Aura AI | Diabetes Clinical Intelligence',
     page_icon='🩺', layout='wide', initial_sidebar_state='expanded')
