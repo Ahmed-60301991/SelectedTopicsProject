@@ -68,17 +68,17 @@ ZERO_IMPUTE_COLS = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI
 @st.cache_resource
 @st.cache_resource
 def load_artifacts():
-    """Load AutoGluon predictor + supporting artefacts from models/ with Linux-compatibility repair."""
+    """Load AutoGluon predictor with manual attribute injection for Linux compatibility."""
     try:
         from autogluon.tabular import TabularPredictor
         import pandas as pd
         import json
 
-        # 1. Load basic metadata
+        # 1. Load metadata
         with open('models/metadata.json') as f:
             meta = json.load(f)
 
-        # 2. Load Predictor with architecture-bypass flags
+        # 2. Load Predictor
         predictor_path = meta.get('predictor_path', 'AutogluonModels/ag_model')
         predictor = TabularPredictor.load(
             predictor_path, 
@@ -87,23 +87,33 @@ def load_artifacts():
             require_version_match=False
         )
 
-        # 3. REPAIR: Fix the 'AttributeError' by re-fitting the feature generator
-        # This allows the Mac-trained model to understand Linux data types
+        # 3. MANUAL INJECTION REPAIR
+        # This addresses the AttributeError directly by adding missing properties
         try:
+            # We dig into the internal generators to fix the 'passthrough' crash
+            for generator in predictor.feature_generator.generators:
+                for gen in generator:
+                    if not hasattr(gen, 'passthrough'):
+                        gen.passthrough = False
+                    if not hasattr(gen, 'passthrough_stage'):
+                        gen.passthrough_stage = 'first'
+                    if not hasattr(gen, 'passthrough_features'):
+                        gen.passthrough_features = []
+            
+            # Now we re-fit on a tiny slice of data to stabilize the state
             train_data = pd.read_csv('Training.csv')
-            # We only need a small sample to initialize the internal 'passthrough' logic
-            predictor.feature_generator.fit(train_data.head(100))
+            predictor.feature_generator.fit(train_data.head(5))
+            
         except Exception as repair_error:
-            st.warning(f"Feature generator repair skipped: {repair_error}")
+            st.warning(f"Feature generator repair attempted: {repair_error}")
 
-        # 4. Extract other variables from meta
-        specific_model = meta['best_model']  # e.g. 'NeuralNetFastAI_r4_BAG_L1'
-        threshold      = meta['threshold']   # 0.50
+        # 4. Extract variables
+        specific_model = meta['best_model']
+        threshold      = meta['threshold']
         feat_cols      = meta.get('features', [
             'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
             'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age'])
 
-        # 5. Load the leaderboard CSV
         leaderboard = pd.read_csv('models/model_leaderboard.csv')
 
         return predictor, specific_model, threshold, feat_cols, leaderboard, meta
