@@ -3,7 +3,7 @@ pandas
 numpy
 joblib
 plotly
-autogluon
+autogluon==1.2
 scikit-learn
 mistralai
 fpdf
