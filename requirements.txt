@@ -3,7 +3,6 @@ pandas
 numpy
 joblib
 plotly
-setuptools>=68.0
 autogluon==1.2
 scikit-learn
 mistralai
