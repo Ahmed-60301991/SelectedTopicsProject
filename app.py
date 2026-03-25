@@ -81,24 +81,48 @@ def load_artifacts():
             require_py_version_match=False,
             require_version_match=False
         )
-        specific_model = meta['best_model']
-        threshold      = meta['threshold']
-        feat_cols      = meta.get('features', [
+
+        threshold = meta['threshold']
+        feat_cols = meta.get('features', [
             'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
             'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age'])
 
         leaderboard = pd.read_csv('models/model_leaderboard.csv')
 
-        # ── Validate that the specific_model can actually be loaded ──────────
-        # NeuralNetFastAI requires fastai/torch; if unavailable, fall back
-        try:
-            test_df = pd.DataFrame([{c: 0 for c in feat_cols}])
-            predictor.predict_proba(test_df, model=specific_model)
-        except Exception:
-            # Fall back to the best model AutoGluon can load natively
-            specific_model = None  # None → AutoGluon uses its default ensemble
+        # ── Find the best model that can actually be unpickled ───────────────
+        # WeightedEnsemble & NeuralNet models depend on fastai/torch which
+        # Streamlit Cloud may not have → they fail at pickle.load time.
+        # We rank by AUC-ROC from the leaderboard, skipping anything that
+        # crashes on a dummy inference call.
+        working_model = None
+        dummy_row = {c: 1 for c in feat_cols}
+        dummy_df  = pd.DataFrame([dummy_row])
 
-        return predictor, specific_model, threshold, feat_cols, leaderboard, meta
+        # Prefer leaderboard order (already sorted by score) if available
+        candidate_names = []
+        if leaderboard is not None and 'Model' in leaderboard.columns:
+            # Put non-DL models first as a fast-path
+            all_names  = leaderboard['Model'].tolist()
+            safe_first = [m for m in all_names if 'Neural' not in m and 'FastAI' not in m]
+            dl_models  = [m for m in all_names if m not in safe_first]
+            candidate_names = safe_first + dl_models
+        else:
+            candidate_names = predictor.get_model_names()
+
+        for model_name in candidate_names:
+            try:
+                predictor.predict_proba(dummy_df, model=model_name)
+                working_model = model_name
+                st.write(f"✅ Using model: {working_model}")  # remove after debugging
+                break
+            except Exception as e:
+                continue   # try next model
+
+        if working_model is None:
+            # Last resort: let AutoGluon pick (may still fail, but worth trying)
+            working_model = meta.get('best_model')
+
+        return predictor, working_model, threshold, feat_cols, leaderboard, meta
 
     except FileNotFoundError:
         return None, None, None, None, None, {}
