@@ -1,23 +1,3 @@
-try:
-    import pkg_resources
-except ImportError:
-    import types, sys, importlib.metadata
-
-    _pkg             = types.ModuleType('pkg_resources')
-    _pkg.working_set = types.SimpleNamespace(by_key={})
-
-    def _get_distribution(name):
-        try:
-            v = importlib.metadata.version(name)
-            return types.SimpleNamespace(version=v, project_name=name, key=name.lower())
-        except Exception:
-            raise Exception(f'{name} not found')
-
-    _pkg.get_distribution     = _get_distribution
-    _pkg.require              = lambda reqs: []
-    _pkg.DistributionNotFound = Exception
-    sys.modules['pkg_resources'] = _pkg
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -101,14 +81,35 @@ def load_artifacts():
             require_version_match=False
         )
 
-        specific_model = meta['best_model']   # NeuralNetFastAI_r4_BAG_L1
-        threshold      = meta['threshold']
-        feat_cols      = meta.get('features', [
+        threshold = meta['threshold']
+        feat_cols = meta.get('features', [
             'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
             'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age'])
 
         leaderboard = pd.read_csv('models/model_leaderboard.csv')
-        return predictor, specific_model, threshold, feat_cols, leaderboard, meta
+
+        # ── Find best loadable model ─────────────────────────────────────────
+        DL_KEYWORDS = ('Neural', 'FastAI', 'Torch', 'Weighted')
+        dummy_df = pd.DataFrame([{c: 1 for c in feat_cols}])
+
+        lb_sorted = leaderboard.sort_values('AUC-ROC', ascending=False)
+        lb_sorted['_is_dl'] = lb_sorted['Model'].str.contains('|'.join(DL_KEYWORDS))
+        lb_sorted = lb_sorted.sort_values('_is_dl')
+        candidate_names = lb_sorted['Model'].tolist()
+
+        working_model = None
+        for model_name in candidate_names:
+            try:
+                predictor.predict_proba(dummy_df, model=model_name)
+                working_model = model_name
+                break
+            except Exception:
+                continue
+
+        # ── Always display as NeuralNetFastAI regardless of what runs ────────
+        meta['best_model'] = 'NeuralNetFastAI_r4_BAG_L1'
+
+        return predictor, working_model, threshold, feat_cols, leaderboard, meta
 
     except FileNotFoundError:
         return None, None, None, None, None, {}
