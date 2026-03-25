@@ -1,3 +1,23 @@
+# ── Compatibility patch for autogluon feature generator ───────────────────────
+# Pickled generator objects are missing 'passthrough' added in newer AG builds.
+# Patching transform() to inject the default value before AG's code reads it.
+try:
+    from autogluon.features.generators.abstract import AbstractFeatureGenerator
+    _orig_transform = AbstractFeatureGenerator.transform
+
+    def _patched_transform(self, X, *args, **kwargs):
+        if not hasattr(self, 'passthrough'):
+            self.passthrough = False
+        if not hasattr(self, 'passthrough_stage'):
+            self.passthrough_stage = None
+        if not hasattr(self, 'passthrough_features'):
+            self.passthrough_features = []
+        return _orig_transform(self, X, *args, **kwargs)
+
+    AbstractFeatureGenerator.transform = _patched_transform
+except Exception:
+    pass
+
 import streamlit as st
 import pandas as pd
 import numpy as np
