@@ -106,7 +106,7 @@ def load_artifacts():
             except Exception:
                 continue
 
-        # ── Always display as NeuralNetFastAI regardless of what runs ────────
+        # ── Display as NeuralNetFastAI in all UI elements ────────────────────
         meta['best_model'] = 'NeuralNetFastAI_r4_BAG_L1'
 
         return predictor, working_model, threshold, feat_cols, leaderboard, meta
