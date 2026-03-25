@@ -65,21 +65,41 @@ GRID_Y = dict(gridcolor='rgba(255,255,255,0.05)', zerolinecolor='rgba(255,255,25
 ZERO_IMPUTE_COLS = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI']
 
 
+@st.cache_resource
 def load_artifacts():
     """Load AutoGluon predictor + supporting artefacts from models/."""
     try:
         from autogluon.tabular import TabularPredictor
+
         with open('models/metadata.json') as f:
             meta = json.load(f)
+
         predictor_path = meta.get('predictor_path', 'AutogluonModels/ag_model')
-        predictor = TabularPredictor.load(predictor_path, verbosity=0, require_py_version_match=False, require_version_match=False)
-        specific_model = meta['best_model']   # e.g. 'NeuralNetFastAI_r4_BAG_L1'
-        threshold      = meta['threshold']    # 0.50
+        predictor = TabularPredictor.load(
+            predictor_path,
+            verbosity=0,
+            require_py_version_match=False,
+            require_version_match=False
+        )
+        specific_model = meta['best_model']
+        threshold      = meta['threshold']
         feat_cols      = meta.get('features', [
             'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
             'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age'])
+
         leaderboard = pd.read_csv('models/model_leaderboard.csv')
+
+        # ── Validate that the specific_model can actually be loaded ──────────
+        # NeuralNetFastAI requires fastai/torch; if unavailable, fall back
+        try:
+            test_df = pd.DataFrame([{c: 0 for c in feat_cols}])
+            predictor.predict_proba(test_df, model=specific_model)
+        except Exception:
+            # Fall back to the best model AutoGluon can load natively
+            specific_model = None  # None → AutoGluon uses its default ensemble
+
         return predictor, specific_model, threshold, feat_cols, leaderboard, meta
+
     except FileNotFoundError:
         return None, None, None, None, None, {}
 
@@ -102,9 +122,11 @@ def prepare_df(raw: dict) -> pd.DataFrame:
 
 
 def predict_proba(raw: dict) -> float:
-    """Return P(diabetic) for a raw input dict. AutoGluon needs no scaler."""
+    """Return P(diabetic) for a raw input dict."""
     df = prepare_df(raw)
-    return float(predictor.predict_proba(df, model=specific_model).iloc[0, 1])
+    # specific_model is None if the named model couldn't load (fallback to ensemble)
+    kwargs = {'model': specific_model} if specific_model else {}
+    return float(predictor.predict_proba(df, **kwargs).iloc[0, 1])
 
 
 # ── MISTRAL AI ────────────────────────────────────────────────────────────────
