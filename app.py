@@ -75,7 +75,7 @@ def load_artifacts():
             meta = json.load(f)
 
         predictor_path = meta.get('predictor_path', 'AutogluonModels/ag_model')
-        predictor = TabularPredictor.load(predictor_path, require_version_match=False)
+        predictor = TabularPredictor.load(predictor_path, verbosity=0, require_py_version_match=False, require_version_match=False)
         specific_model = meta['best_model']   # e.g. 'NeuralNetFastAI_r4_BAG_L1'
         threshold      = meta['threshold']    # 0.50
         feat_cols      = meta.get('features', [
