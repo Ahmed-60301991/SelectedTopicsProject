@@ -65,55 +65,26 @@ GRID_Y = dict(gridcolor='rgba(255,255,255,0.05)', zerolinecolor='rgba(255,255,25
 ZERO_IMPUTE_COLS = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI']
 
 
-@st.cache_resource
-def load_artifacts():
-    """Load AutoGluon with a Global Class Patch for Mac-to-Linux compatibility."""
+ def load_artifacts():
+    """Load AutoGluon predictor + supporting artefacts from models/."""
     try:
         from autogluon.tabular import TabularPredictor
-        from autogluon.features.generators.abstract import AbstractFeatureGenerator
-        import pandas as pd
-        import json
-
-        # 1. THE GLOBAL PATCH
-        # This forces EVERY generator to have these attributes at the class level
-        # This is the most robust way to stop the 'passthrough' AttributeError
-        if not hasattr(AbstractFeatureGenerator, 'passthrough'):
-            AbstractFeatureGenerator.passthrough = False
-        if not hasattr(AbstractFeatureGenerator, 'passthrough_stage'):
-            AbstractFeatureGenerator.passthrough_stage = 'first'
-        if not hasattr(AbstractFeatureGenerator, 'passthrough_features'):
-            AbstractFeatureGenerator.passthrough_features = []
-
-        # 2. Load metadata
         with open('models/metadata.json') as f:
             meta = json.load(f)
-
-        # 3. Load Predictor
         predictor_path = meta.get('predictor_path', 'AutogluonModels/ag_model')
-        predictor = TabularPredictor.load(
-            predictor_path, 
-            verbosity=0, 
-            require_py_version_match=False, 
-            require_version_match=False
-        )
-
-        # 4. Standard extractions
-        specific_model = meta['best_model']
-        threshold      = meta['threshold']
+        predictor = TabularPredictor.load(predictor_path, verbosity=0, require_py_version_match=False, require_version_match=False)
+        specific_model = meta['best_model']   # e.g. 'NeuralNetFastAI_r4_BAG_L1'
+        threshold      = meta['threshold']    # 0.50
         feat_cols      = meta.get('features', [
             'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
             'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age'])
-
         leaderboard = pd.read_csv('models/model_leaderboard.csv')
-
         return predictor, specific_model, threshold, feat_cols, leaderboard, meta
-
-    except Exception as e:
-        st.error(f"Critical error loading models: {e}")
+    except FileNotFoundError:
         return None, None, None, None, None, {}
-# Initialize global variables
+
 predictor, specific_model, threshold, feat_cols, leaderboard_df, meta = load_artifacts()
-MODELS_LOADED = predictor is not None
+MODELS_LOADED = predictor is not None 
 
 
 # ── PREDICTION HELPERS ────────────────────────────────────────────────────────
