@@ -3,9 +3,9 @@ pandas
 numpy
 joblib
 plotly
-autogluon.tabular
+autogluon
+scikit-learn
 mistralai
 fpdf
 shap
 matplotlib
-rich>=14.3.3
