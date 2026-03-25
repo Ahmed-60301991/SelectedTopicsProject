@@ -67,17 +67,28 @@ ZERO_IMPUTE_COLS = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI
 
 @st.cache_resource
 def load_artifacts():
-    """Load AutoGluon predictor with recursive attribute injection for total Linux compatibility."""
+    """Load AutoGluon with a Global Class Patch for Mac-to-Linux compatibility."""
     try:
         from autogluon.tabular import TabularPredictor
+        from autogluon.features.generators.abstract import AbstractFeatureGenerator
         import pandas as pd
         import json
 
-        # 1. Load metadata
+        # 1. THE GLOBAL PATCH
+        # This forces EVERY generator to have these attributes at the class level
+        # This is the most robust way to stop the 'passthrough' AttributeError
+        if not hasattr(AbstractFeatureGenerator, 'passthrough'):
+            AbstractFeatureGenerator.passthrough = False
+        if not hasattr(AbstractFeatureGenerator, 'passthrough_stage'):
+            AbstractFeatureGenerator.passthrough_stage = 'first'
+        if not hasattr(AbstractFeatureGenerator, 'passthrough_features'):
+            AbstractFeatureGenerator.passthrough_features = []
+
+        # 2. Load metadata
         with open('models/metadata.json') as f:
             meta = json.load(f)
 
-        # 2. Load Predictor
+        # 3. Load Predictor
         predictor_path = meta.get('predictor_path', 'AutogluonModels/ag_model')
         predictor = TabularPredictor.load(
             predictor_path, 
@@ -85,34 +96,6 @@ def load_artifacts():
             require_py_version_match=False, 
             require_version_match=False
         )
-
-        # 3. RECURSIVE REPAIR: Force-inject missing attributes into ALL generators
-        def inject_attributes(obj):
-            """Recursively find all generators and inject missing Linux attributes."""
-            # Inject into the current object if it's a generator-like object
-            if hasattr(obj, '__dict__'):
-                if not hasattr(obj, 'passthrough'):
-                    obj.passthrough = False
-                if not hasattr(obj, 'passthrough_stage'):
-                    obj.passthrough_stage = 'first'
-                if not hasattr(obj, 'passthrough_features'):
-                    obj.passthrough_features = []
-                
-                # Check for nested generators in lists (like BulkFeatureGenerator)
-                if hasattr(obj, 'generators'):
-                    for g_list in obj.generators:
-                        for g in g_list:
-                            inject_attributes(g)
-
-        try:
-            # Find the root feature generator
-            fg = getattr(predictor, 'feature_generator', getattr(predictor._learner, 'feature_generator', None))
-            if fg is not None:
-                inject_attributes(fg)
-                # We skip .fit() now because the recursion handles the attributes directly
-                st.info("Linux compatibility patch applied to feature generators.")
-        except Exception as repair_error:
-            st.warning(f"Generator repair failed: {repair_error}")
 
         # 4. Standard extractions
         specific_model = meta['best_model']
