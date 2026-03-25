@@ -67,7 +67,6 @@ ZERO_IMPUTE_COLS = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI
 
 @st.cache_resource
 def load_artifacts():
-    """Load AutoGluon predictor + supporting artefacts from models/."""
     try:
         from autogluon.tabular import TabularPredictor
 
@@ -82,47 +81,14 @@ def load_artifacts():
             require_version_match=False
         )
 
-        threshold = meta['threshold']
-        feat_cols = meta.get('features', [
+        specific_model = meta['best_model']   # NeuralNetFastAI_r4_BAG_L1
+        threshold      = meta['threshold']
+        feat_cols      = meta.get('features', [
             'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
             'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age'])
 
         leaderboard = pd.read_csv('models/model_leaderboard.csv')
-
-        # ── Find the best model that can actually be unpickled ───────────────
-        # WeightedEnsemble & NeuralNet models depend on fastai/torch which
-        # Streamlit Cloud may not have → they fail at pickle.load time.
-        # We rank by AUC-ROC from the leaderboard, skipping anything that
-        # crashes on a dummy inference call.
-        working_model = None
-        dummy_row = {c: 1 for c in feat_cols}
-        dummy_df  = pd.DataFrame([dummy_row])
-
-        # Prefer leaderboard order (already sorted by score) if available
-        candidate_names = []
-        if leaderboard is not None and 'Model' in leaderboard.columns:
-            # Put non-DL models first as a fast-path
-            all_names  = leaderboard['Model'].tolist()
-            safe_first = [m for m in all_names if 'Neural' not in m and 'FastAI' not in m]
-            dl_models  = [m for m in all_names if m not in safe_first]
-            candidate_names = safe_first + dl_models
-        else:
-            candidate_names = predictor.get_model_names()
-
-        for model_name in candidate_names:
-            try:
-                predictor.predict_proba(dummy_df, model=model_name)
-                working_model = model_name
-                st.write(f"✅ Using model: {working_model}")  # remove after debugging
-                break
-            except Exception as e:
-                continue   # try next model
-
-        if working_model is None:
-            # Last resort: let AutoGluon pick (may still fail, but worth trying)
-            working_model = meta.get('best_model')
-
-        return predictor, working_model, threshold, feat_cols, leaderboard, meta
+        return predictor, specific_model, threshold, feat_cols, leaderboard, meta
 
     except FileNotFoundError:
         return None, None, None, None, None, {}
@@ -146,11 +112,8 @@ def prepare_df(raw: dict) -> pd.DataFrame:
 
 
 def predict_proba(raw: dict) -> float:
-    """Return P(diabetic) for a raw input dict."""
     df = prepare_df(raw)
-    # specific_model is None if the named model couldn't load (fallback to ensemble)
-    kwargs = {'model': specific_model} if specific_model else {}
-    return float(predictor.predict_proba(df, **kwargs).iloc[0, 1])
+    return float(predictor.predict_proba(df, model=specific_model).iloc[0, 1])
 
 
 # ── MISTRAL AI ────────────────────────────────────────────────────────────────
