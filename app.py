@@ -1,3 +1,24 @@
+# ── MUST BE FIRST LINES — pkg_resources shim for Python 3.12 ─────────────────
+try:
+    import pkg_resources
+except (ImportError, ModuleNotFoundError):
+    import types as _types, sys as _sys, importlib.metadata as _meta
+    _pkg = _types.ModuleType('pkg_resources')
+    _pkg.working_set = _types.SimpleNamespace(by_key={})
+    def _get_dist(name):
+        try:
+            return _types.SimpleNamespace(
+                version=_meta.version(name),
+                project_name=name,
+                key=name.lower())
+        except Exception:
+            raise Exception(f'{name} not found')
+    _pkg.get_distribution     = _get_dist
+    _pkg.require              = lambda reqs: []
+    _pkg.DistributionNotFound = Exception
+    _sys.modules['pkg_resources'] = _pkg
+# ─────────────────────────────────────────────────────────────────────────────
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -6,25 +27,21 @@ import json
 import os
 import plotly.graph_objects as go
 
-# ── Compatibility patch for autogluon feature generator ───────────────────────
-# Pickled generator objects are missing 'passthrough' added in newer AG builds.
-# Patching transform() to inject the default value before AG's code reads it.
+# ── Compatibility patch for autogluon feature generators ─────────────────────
 try:
     from autogluon.features.generators.abstract import AbstractFeatureGenerator
     _orig_transform = AbstractFeatureGenerator.transform
-
     def _patched_transform(self, X, *args, **kwargs):
-        if not hasattr(self, 'passthrough'):
-            self.passthrough = False
-        if not hasattr(self, 'passthrough_stage'):
-            self.passthrough_stage = None
-        if not hasattr(self, 'passthrough_features'):
-            self.passthrough_features = []
+        if not hasattr(self, 'passthrough'):           self.passthrough = False
+        if not hasattr(self, 'passthrough_stage'):     self.passthrough_stage = None
+        if not hasattr(self, 'passthrough_features'): self.passthrough_features = []
         return _orig_transform(self, X, *args, **kwargs)
-
     AbstractFeatureGenerator.transform = _patched_transform
 except Exception:
     pass
+# ─────────────────────────────────────────────────────────────────────────────
+
+st.set_page_config(...)  # rest of your app unchanged
 
 st.set_page_config(page_title='Aura AI | Diabetes Clinical Intelligence',
     page_icon='🩺', layout='wide', initial_sidebar_state='expanded')
