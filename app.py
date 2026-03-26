@@ -30,15 +30,15 @@ import plotly.graph_objects as go
 # ── Compatibility patch for autogluon feature generators ─────────────────────
 try:
     from autogluon.features.generators.abstract import AbstractFeatureGenerator
-    _orig_transform = AbstractFeatureGenerator.transform
-    def _patched_transform(self, X, *args, **kwargs):
-        if not hasattr(self, 'passthrough'):           self.passthrough = False
-        if not hasattr(self, 'passthrough_stage'):     self.passthrough_stage = None
-        if not hasattr(self, 'passthrough_features'): self.passthrough_features = []
-        return _orig_transform(self, X, *args, **kwargs)
-    AbstractFeatureGenerator.transform = _patched_transform
+    if not hasattr(AbstractFeatureGenerator, 'passthrough'):
+        AbstractFeatureGenerator.passthrough = False
+    if not hasattr(AbstractFeatureGenerator, 'passthrough_stage'):
+        AbstractFeatureGenerator.passthrough_stage = None
+    if not hasattr(AbstractFeatureGenerator, 'passthrough_features'):
+        AbstractFeatureGenerator.passthrough_features = []
 except Exception:
     pass
+# ─────────────────────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title='Aura AI | Diabetes Clinical Intelligence',
     page_icon='🩺', layout='wide', initial_sidebar_state='expanded')
