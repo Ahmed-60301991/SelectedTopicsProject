@@ -39,9 +39,6 @@ try:
     AbstractFeatureGenerator.transform = _patched_transform
 except Exception:
     pass
-# ─────────────────────────────────────────────────────────────────────────────
-
-st.set_page_config(...)  # rest of your app unchanged
 
 st.set_page_config(page_title='Aura AI | Diabetes Clinical Intelligence',
     page_icon='🩺', layout='wide', initial_sidebar_state='expanded')
