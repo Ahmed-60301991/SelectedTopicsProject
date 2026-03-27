@@ -3,10 +3,8 @@ pandas
 numpy
 joblib
 plotly
-autogluon==1.2
-scikit-learn
+autogluon.tabular
 mistralai
 fpdf
 shap
 matplotlib
-setuptools
