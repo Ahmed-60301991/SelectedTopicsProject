@@ -76,8 +76,8 @@ def load_artifacts():
 
         predictor_path = meta.get('predictor_path', 'AutogluonModels/ag_model')
         predictor      = TabularPredictor.load(predictor_path)
-        specific_model = meta['best_model']   # e.g. 'NeuralNetFastAI_r4_BAG_L1'
-        threshold      = meta['threshold']    # 0.50
+        specific_model = meta['best_model']
+        threshold      = meta['threshold']
         feat_cols      = meta.get('features', [
             'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
             'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age'])
@@ -87,6 +87,13 @@ def load_artifacts():
         return predictor, specific_model, threshold, feat_cols, leaderboard, meta
 
     except FileNotFoundError:
+        st.error("Model files not found. Check the `models/` and `AutogluonModels/` directories.")
+        return None, None, None, None, None, {}
+    except AssertionError as e:
+        st.error(f"AutoGluon version mismatch: {e}\n\nEnsure autogluon.tabular==1.2.0 is in requirements.txt.")
+        return None, None, None, None, None, {}
+    except Exception as e:
+        st.error(f"Unexpected error loading model: {e}")
         return None, None, None, None, None, {}
 
 
@@ -108,10 +115,9 @@ def prepare_df(raw: dict) -> pd.DataFrame:
     return df
 
 
-def predict_proba(raw: dict) -> float:
-    """Return P(diabetic) for a raw input dict. AutoGluon needs no scaler."""
-    df = prepare_df(raw)
-    return float(predictor.predict_proba(df, model=specific_model).iloc[0, 1])
+def predict_proba(df):
+    # If using the Scikit-Learn fallback:
+    return float(predictor.predict_proba(df)[0, 1])
 
 
 # ── MISTRAL AI ────────────────────────────────────────────────────────────────
