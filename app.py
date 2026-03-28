@@ -67,7 +67,6 @@ ZERO_IMPUTE_COLS = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI
 
 @st.cache_resource
 def load_artifacts():
-    """Load AutoGluon predictor + supporting artefacts from models/."""
     try:
         from autogluon.tabular import TabularPredictor
 
@@ -75,6 +74,11 @@ def load_artifacts():
             meta = json.load(f)
 
         predictor_path = meta.get('predictor_path', 'AutogluonModels/ag_model')
+
+        # Override absolute/missing paths with the known repo-relative path
+        if os.path.isabs(predictor_path) or not os.path.exists(predictor_path):
+            predictor_path = 'AutogluonModels/ag_model'
+
         predictor      = TabularPredictor.load(predictor_path)
         specific_model = meta['best_model']
         threshold      = meta['threshold']
@@ -86,8 +90,8 @@ def load_artifacts():
 
         return predictor, specific_model, threshold, feat_cols, leaderboard, meta
 
-    except FileNotFoundError:
-        st.error("Model files not found. Check the `models/` and `AutogluonModels/` directories.")
+    except FileNotFoundError as e:
+        st.error(f"Model files not found: {e}. Check that `AutogluonModels/ag_model/` and `models/` are committed to the repo.")
         return None, None, None, None, None, {}
     except AssertionError as e:
         st.error(f"AutoGluon version mismatch: {e}\n\nEnsure autogluon.tabular==1.2.0 is in requirements.txt.")
