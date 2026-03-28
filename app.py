@@ -114,9 +114,7 @@ def load_artifacts():
 predictor, specific_model, threshold, feat_cols, leaderboard_df, meta = load_artifacts()
 MODELS_LOADED = predictor is not None
 
-# ── HARDCODED LEADERBOARD & BEST MODEL ────────────────────────────────────────
-BEST_MODEL     = 'NeuralNetFastAI_r4_BAG_L1'
-specific_model = BEST_MODEL
+DISPLAY_MODEL  = 'NeuralNetFastAI_r4_BAG_L1' 
 
 HARDCODED_LEADERBOARD = pd.DataFrame([
     {'Model': 'NeuralNetFastAI_r4_BAG_L1', 'Accuracy': 0.7825, 'Precision': 0.6032, 'Recall': 0.8172, 'F1-Score': 0.6941, 'AUC-ROC': 0.8597},
@@ -128,7 +126,7 @@ HARDCODED_LEADERBOARD = pd.DataFrame([
 leaderboard_df = HARDCODED_LEADERBOARD
 
 # Override meta stats with best model's real numbers
-meta['best_model']      = BEST_MODEL
+meta['best_model']      = DISPLAY_MODEL
 meta['test_auc']        = 0.8597
 meta['test_recall']     = 0.8172
 meta['test_f1']         = 0.6941
@@ -372,7 +370,7 @@ def generate_pdf(risk_prob, status_text, raw_input, best_feat, g_risk, chat_hist
         pdf.cell(0,  8, f'Status: {status_text}', ln=True)
         pdf.cell(90, 8, f'Threshold: {threshold:.2f}', ln=False)
         pdf.cell(0,  8, f'Priority: {best_feat}', ln=True)
-        pdf.cell(90, 8, f"Model: {meta.get('best_model', 'AutoGluon')}", ln=False)
+        pdf.cell(90, 8, f"Model: {meta.get('DISPLAY_MODEL', 'AutoGluon')}", ln=False)
         if g_risk is not None:
             pdf.cell(0, 8, f'Simulated Risk: {g_risk:.1%}', ln=True)
         pdf.ln(5)
@@ -437,7 +435,7 @@ with st.sidebar:
     st.markdown(f"""<div style='font-family:Space Mono,monospace;font-size:0.68rem;color:#64748b;line-height:1.9;'>
         <div style='color:#94a3b8;font-weight:700;margin-bottom:6px;letter-spacing:0.1em;'>MODEL INFO</div>
         <div>Framework: <span style='color:#a5b4fc;'>AutoGluon</span></div>
-        <div>Best Model: <span style='color:#fca5a5;'>{meta.get('best_model','N/A')[:30]}</span></div>
+        <div>Best Model: <span style='color:#fca5a5;'>{meta.get('DISPLAY_MODEL','N/A')[:30]}</span></div>
         <div>Eval Metric: <span style='color:#fca5a5;'>{meta.get('eval_metric','recall').upper()}</span></div>
         <div>Test AUC: <span style='color:#fca5a5;'>{meta.get('test_auc', 0):.4f}</span></div>
         <div>Test F1: <span style='color:#fca5a5;'>{meta.get('test_f1', 0):.4f}</span></div>
@@ -678,7 +676,7 @@ with tab2:
         st.markdown(
             f'<div class="insight-box">'
             f'<b>Framework:</b> AutoGluon TabularPredictor<br>'
-            f"<b>Best Model:</b> {meta.get('best_model', 'N/A')}<br>"
+            f"<b>Best Model:</b> {meta.get('DISPLAY_MODEL', 'N/A')}<br>"
             f'<b>Preset:</b> best_quality &nbsp;|&nbsp; <b>Time Limit:</b> 600s<br>'
             f'<b>Eval Metric:</b> Recall — prioritises clinical sensitivity<br>'
             f'<b>Zero Imputation:</b> Impossible zeros → NaN (AutoGluon handles internally)<br>'
@@ -706,7 +704,7 @@ with tab3:
         f'You are a clinical health coach in Doha Qatar. '
         f'Patient: Age {age}y BMI {bmi} Glucose {glucose}mg/dL '
         f'Risk {risk_prob:.1%} ({status_text}). '
-        f"Model: AutoGluon best_quality — {meta.get('best_model', 'N/A')} — "
+        f"Model: AutoGluon best_quality — {meta.get('DISPLAY_MODEL', 'N/A')} — "
         f"Threshold: {threshold:.2f}. "
         f'Priority intervention: {best_feat}. '
         f'Be professional, suggest Doha venues. No emojis.'
