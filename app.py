@@ -67,39 +67,62 @@ ZERO_IMPUTE_COLS = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI
 
 @st.cache_resource
 def load_artifacts():
+    """Load AutoGluon predictor with version & architecture bypass flags."""
     try:
         from autogluon.tabular import TabularPredictor
+        import os
+        import json
+        import pandas as pd
 
-        with open('models/metadata.json') as f:
+        # 1. Load Metadata
+        metadata_path = 'models/metadata.json'
+        if not os.path.exists(metadata_path):
+            raise FileNotFoundError(f"Missing {metadata_path}")
+            
+        with open(metadata_path) as f:
             meta = json.load(f)
 
+        # 2. Resolve Predictor Path
         predictor_path = meta.get('predictor_path', 'AutogluonModels/ag_model')
-
-        # Override absolute/missing paths with the known repo-relative path
+        # Fallback to local repo path if metadata has an absolute path from your Mac
         if os.path.isabs(predictor_path) or not os.path.exists(predictor_path):
             predictor_path = 'AutogluonModels/ag_model'
 
-        predictor      = TabularPredictor.load(predictor_path)
-        specific_model = meta['best_model']
-        threshold      = meta['threshold']
+        if not os.path.exists(predictor_path):
+            raise FileNotFoundError(f"Predictor folder not found at: {os.path.abspath(predictor_path)}")
+
+        # 3. The Pragmatic Load
+        # We add require_py_version_match=False to handle the Mac-to-Linux jump
+        predictor = TabularPredictor.load(
+            predictor_path, 
+            verbosity=0, 
+            require_version_match=False, 
+            require_py_version_match=False
+        )
+
+        # 4. Load Supporting Artifacts
+        specific_model = meta.get('best_model')
+        threshold      = meta.get('threshold', 0.5)
         feat_cols      = meta.get('features', [
             'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
             'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age'])
 
-        leaderboard = pd.read_csv('models/model_leaderboard.csv')
+        leaderboard_path = 'models/model_leaderboard.csv'
+        leaderboard = pd.read_csv(leaderboard_path) if os.path.exists(leaderboard_path) else pd.DataFrame()
 
         return predictor, specific_model, threshold, feat_cols, leaderboard, meta
 
-    except FileNotFoundError as e:
-        st.error(f"Model files not found: {e}. Check that `AutogluonModels/ag_model/` and `models/` are committed to the repo.")
-        return None, None, None, None, None, {}
-    except AssertionError as e:
-        st.error(f"AutoGluon version mismatch: {e}\n\nEnsure autogluon.tabular==1.2.0 is in requirements.txt.")
-        return None, None, None, None, None, {}
     except Exception as e:
-        st.error(f"Unexpected error loading model: {e}")
+        # This catches pkg_resources, version mismatches, and path issues in one place
+        st.error(f"🚨 Aura AI Load Error: {e}")
+        
+        # Friendly troubleshooting advice for your UDST project presentation
+        if "pkg_resources" in str(e):
+            st.warning("Fix: Add 'setuptools' to your requirements.txt and reboot.")
+        elif "version" in str(e).lower():
+            st.warning("Note: Still hitting a version mismatch despite bypass flags.")
+            
         return None, None, None, None, None, {}
-
 
 predictor, specific_model, threshold, feat_cols, leaderboard_df, meta = load_artifacts()
 MODELS_LOADED = predictor is not None
