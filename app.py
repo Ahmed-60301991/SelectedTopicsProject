@@ -142,11 +142,29 @@ def prepare_df(raw: dict) -> pd.DataFrame:
     return df
 
 
-def predict_proba(raw: dict) -> float:
-    """Return P(diabetic) for a raw input dict."""
-    df = prepare_df(raw)
-    proba_df = predictor.predict_proba(df, as_multiclass=True)
-    return float(proba_df.iloc[0, 1])
+def predict_proba(raw_input_data):
+    """Ensure input is a DataFrame and get prediction probabilities."""
+    try:
+        import pandas as pd
+        
+        # 1. Convert input to DataFrame if it isn't one already
+        if isinstance(raw_input_data, pd.DataFrame):
+            df = raw_input_data
+        else:
+            # If raw_input_data is a dict or list, wrap it
+            df = pd.DataFrame([raw_input_data])
+
+        # 2. Get the prediction
+        # Use the specific_model we loaded in artifacts
+        probs = predictor.predict_proba(df, model=specific_model)
+        
+        # 3. Extract the probability of the 'Positive' class (usually column index 1)
+        # We use .iloc[0, 1] for DataFrames or .values[0, 1]
+        return float(probs.iloc[0, 1])
+
+    except Exception as e:
+        st.error(f"Prediction Error: {e}")
+        return 0.0
 
 
 # ── MISTRAL AI ────────────────────────────────────────────────────────────────
