@@ -1,0 +1,22 @@
+{
+  "best_model": "NeuralNetFastAI_r4_BAG_L1",
+  "predictor_path": "AutogluonModels/ag_model",
+  "threshold": 0.5,
+  "features": [
+    "Pregnancies",
+    "Glucose",
+    "BloodPressure",
+    "SkinThickness",
+    "Insulin",
+    "BMI",
+    "DiabetesPedigreeFunction",
+    "Age"
+  ],
+  "eval_metric": "recall",
+  "presets": "best_quality",
+  "test_auc": 0.8597,
+  "test_f1": 0.6941,
+  "test_recall": 0.8172,
+  "test_accuracy": 0.7825,
+  "test_precision": 0.6032
+}
