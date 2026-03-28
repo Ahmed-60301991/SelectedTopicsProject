@@ -142,9 +142,11 @@ def prepare_df(raw: dict) -> pd.DataFrame:
     return df
 
 
-def predict_proba(df):
-    # If using the Scikit-Learn fallback:
-    return float(predictor.predict_proba(df)[0, 1])
+def predict_proba(raw: dict) -> float:
+    """Return P(diabetic) for a raw input dict."""
+    df = prepare_df(raw)
+    proba_df = predictor.predict_proba(df, as_multiclass=True)
+    return float(proba_df.iloc[0, 1])
 
 
 # ── MISTRAL AI ────────────────────────────────────────────────────────────────
