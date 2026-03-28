@@ -1,11 +1,14 @@
+setuptools
 streamlit
 pandas
 numpy
 joblib
 plotly
-autogluon.tabular
+autogluon
+catboost
+lightgbm
+scikit-learn
 mistralai
 fpdf
 shap
 matplotlib
-setuptools
