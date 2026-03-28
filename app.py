@@ -91,7 +91,7 @@ def load_artifacts():
             require_py_version_match=False
         )
 
-        specific_model = meta.get('best_model')
+        specific_model = meta.get('DISPLAY_MODEL')
         threshold      = meta.get('threshold', 0.5)
         feat_cols      = meta.get('features', [
             'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
@@ -126,7 +126,7 @@ HARDCODED_LEADERBOARD = pd.DataFrame([
 leaderboard_df = HARDCODED_LEADERBOARD
 
 # Override meta stats with best model's real numbers
-meta['best_model']      = DISPLAY_MODEL
+meta['DISPLAY_MODEL']      = DISPLAY_MODEL
 meta['test_auc']        = 0.8597
 meta['test_recall']     = 0.8172
 meta['test_f1']         = 0.6941
@@ -730,13 +730,13 @@ with tab4:
                 unsafe_allow_html=True)
 
     # Always use hardcoded leaderboard, best model pinned to top
-    chosen_row = leaderboard_df[leaderboard_df['Model'] == BEST_MODEL]
-    other_rows = leaderboard_df[leaderboard_df['Model'] != BEST_MODEL]
+    chosen_row = leaderboard_df[leaderboard_df['Model'] == DISPLAY_MODEL]
+    other_rows = leaderboard_df[leaderboard_df['Model'] != DISPLAY_MODEL]
     display_df = pd.concat([chosen_row, other_rows], ignore_index=True)
 
     rows_html = ''
     for _, row in display_df.iterrows():
-        is_chosen = row['Model'] == BEST_MODEL
+        is_chosen = row['Model'] == DISPLAY_MODEL
         hl        = "style='background:rgba(139,0,0,0.2);border-left:3px solid #c41e3a;'" if is_chosen else ''
         badge     = ' ★ Selected' if is_chosen else ''
         rows_html += f"<tr {hl}><td><b>{row['Model']}</b><span style='color:#d4af37;font-size:0.7rem;margin-left:6px;'>{badge}</span></td>"
@@ -769,7 +769,7 @@ with tab4:
                     unsafe_allow_html=True)
         arch_info = [
             ('Framework',       'AutoGluon TabularPredictor'),
-            ('Best Model',      BEST_MODEL),
+            ('Display Model',      DISPLAY_MODEL),
             ('Preset',          meta.get('presets', 'best_quality')),
             ('Eval Metric',     meta.get('eval_metric', 'recall').upper()),
             ('Training Time',   '600 seconds'),
