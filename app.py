@@ -64,22 +64,6 @@ GRID_Y = dict(gridcolor='rgba(255,255,255,0.05)', zerolinecolor='rgba(255,255,25
 # Columns where 0 is physiologically impossible — mirrors notebook cell 12
 ZERO_IMPUTE_COLS = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI']
 
-# --- EMERGENCY LINUX COMPATIBILITY PATCH ---
-from autogluon.features.generators.astype import AsTypeFeatureGenerator
-from autogluon.features.generators.abstract import AbstractFeatureGenerator
-
-# This forces the missing attributes into the classes themselves
-# so that every sub-generator (like AsType) inherits them.
-for generator_class in [AbstractFeatureGenerator, AsTypeFeatureGenerator]:
-    if not hasattr(generator_class, 'passthrough'):
-        generator_class.passthrough = False
-    if not hasattr(generator_class, 'passthrough_stage'):
-        generator_class.passthrough_stage = 'first'
-    if not hasattr(generator_class, 'passthrough_features'):
-        generator_class.passthrough_features = []
-# --------------------------------------------
-
-
 @st.cache_resource
 def load_artifacts():
     """Load AutoGluon predictor with version & architecture bypass flags."""
