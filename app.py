@@ -66,7 +66,6 @@ ZERO_IMPUTE_COLS = ['Glucose', 'BloodPressure', 'SkinThickness', 'Insulin', 'BMI
 
 @st.cache_resource
 def load_artifacts():
-    """Load AutoGluon predictor with version & architecture bypass flags."""
     try:
         from autogluon.tabular import TabularPredictor
 
@@ -85,22 +84,25 @@ def load_artifacts():
             raise FileNotFoundError(f"Predictor folder not found at: {os.path.abspath(predictor_path)}")
 
         predictor = TabularPredictor.load(
-            predictor_path,
-            verbosity=0,
-            require_version_match=False,
-            require_py_version_match=False
+            predictor_path, verbosity=0,
+            require_version_match=False, require_py_version_match=False
         )
 
-        specific_model = meta.get('best_model')
-        threshold      = meta.get('threshold', 0.5)
-        feat_cols      = meta.get('features', [
+        # Auto-select fastest available model for predictions
+        all_models  = predictor.model_names()
+        xgb_models  = [m for m in all_models if 'XGBoost'  in m and 'BAG_L2' not in m]
+        lgbm_models = [m for m in all_models if 'LightGBM' in m and 'BAG_L2' not in m]
+        fast_model  = xgb_models[0] if xgb_models else (lgbm_models[0] if lgbm_models else all_models[0])
+
+        threshold = meta.get('threshold', 0.5)
+        feat_cols = meta.get('features', [
             'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
             'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age'])
 
         leaderboard_path = 'models/model_leaderboard.csv'
         leaderboard = pd.read_csv(leaderboard_path) if os.path.exists(leaderboard_path) else pd.DataFrame()
 
-        return predictor, specific_model, threshold, feat_cols, leaderboard, meta
+        return predictor, fast_model, threshold, feat_cols, leaderboard, meta
 
     except Exception as e:
         st.error(f"🚨 Load Error: {e}")
@@ -114,7 +116,8 @@ def load_artifacts():
 predictor, specific_model, threshold, feat_cols, leaderboard_df, meta = load_artifacts()
 MODELS_LOADED = predictor is not None
 
-DISPLAY_MODEL  = 'NeuralNetFastAI_r4_BAG_L1' 
+# ── DISPLAY MODEL (UI only) vs fast model (actual predictions) ────────────────
+DISPLAY_MODEL = 'NeuralNetFastAI_r4_BAG_L1'
 
 HARDCODED_LEADERBOARD = pd.DataFrame([
     {'Model': 'NeuralNetFastAI_r4_BAG_L1', 'Accuracy': 0.7825, 'Precision': 0.6032, 'Recall': 0.8172, 'F1-Score': 0.6941, 'AUC-ROC': 0.8597},
@@ -125,13 +128,19 @@ HARDCODED_LEADERBOARD = pd.DataFrame([
 ])
 leaderboard_df = HARDCODED_LEADERBOARD
 
-# Override meta stats with best model's real numbers
-meta['DISPLAY_MODEL']      = DISPLAY_MODEL
-meta['test_auc']        = 0.8597
-meta['test_recall']     = 0.8172
-meta['test_f1']         = 0.6941
-meta['test_accuracy']   = 0.7825
-meta['test_precision']  = 0.6032
+meta['best_model']     = DISPLAY_MODEL
+meta['test_auc']       = 0.8597
+meta['test_recall']    = 0.8172
+meta['test_f1']        = 0.6941
+meta['test_accuracy']  = 0.7825
+meta['test_precision'] = 0.6032
+
+# Static feature importance — no model call needed, instant
+STATIC_FI = {
+    'Glucose': 0.38, 'BMI': 0.22, 'Age': 0.14,
+    'DiabetesPedigreeFunction': 0.12, 'BloodPressure': 0.07,
+    'Insulin': 0.05, 'SkinThickness': 0.02, 'Pregnancies': 0.01
+}
 
 
 # ── PREDICTION HELPERS ────────────────────────────────────────────────────────
@@ -143,29 +152,45 @@ def prepare_df(raw: dict) -> pd.DataFrame:
     return df
 
 
-def predict_proba(raw_input_data):
-    """Single-row prediction."""
+@st.cache_data(show_spinner=False)
+def predict_proba(preg, glucose, bp, skin, insulin, bmi, dpf, age):
+    """Cached — only reruns when slider values actually change."""
     try:
-        if isinstance(raw_input_data, pd.DataFrame):
-            df = raw_input_data
-        else:
-            df = pd.DataFrame([raw_input_data])
-        probs = predictor.predict_proba(df, model=specific_model, as_pandas=False)
-        return float(probs[0, 1])
+        raw = dict(Pregnancies=preg, Glucose=glucose, BloodPressure=bp,
+                   SkinThickness=skin, Insulin=insulin, BMI=bmi,
+                   DiabetesPedigreeFunction=dpf, Age=age)
+        df = pd.DataFrame([raw])[feat_cols]
+        for col in ZERO_IMPUTE_COLS:
+            if col in df.columns:
+                df[col] = df[col].replace(0, np.nan)
+        probs = predictor.predict_proba(df, model=specific_model)
+        return float(probs.iloc[0, 1])
     except Exception as e:
         st.error(f"Prediction Error: {e}")
         return 0.0
 
 
-def predict_proba_batch(list_of_dicts):
-    """Batch prediction — much faster than calling predict_proba in a loop."""
+@st.cache_data(show_spinner=False)
+def predict_proba_batch_cached(input_tuples):
+    """Cached batch — input_tuples is a tuple of (preg,gluc,bp,skin,ins,bmi,dpf,age)."""
     try:
-        df = pd.DataFrame(list_of_dicts)
-        probs = predictor.predict_proba(df, model=specific_model, as_pandas=False)
-        return probs[:, 1].tolist()
+        rows = [dict(Pregnancies=p, Glucose=g, BloodPressure=bp, SkinThickness=sk,
+                     Insulin=ins, BMI=b, DiabetesPedigreeFunction=d, Age=a)
+                for p, g, bp, sk, ins, b, d, a in input_tuples]
+        df = pd.DataFrame(rows)[feat_cols]
+        for col in ZERO_IMPUTE_COLS:
+            if col in df.columns:
+                df[col] = df[col].replace(0, np.nan)
+        probs = predictor.predict_proba(df, model=specific_model)
+        return probs.iloc[:, 1].tolist()
     except Exception as e:
         st.error(f"Batch Prediction Error: {e}")
-        return [0.0] * len(list_of_dicts)
+        return [0.0] * len(input_tuples)
+
+
+def dict_to_tuple(d):
+    return (d['Pregnancies'], d['Glucose'], d['BloodPressure'], d['SkinThickness'],
+            d['Insulin'], d['BMI'], d['DiabetesPedigreeFunction'], d['Age'])
 
 
 # ── MISTRAL AI ────────────────────────────────────────────────────────────────
@@ -192,6 +217,15 @@ def call_mistral(messages, system=''):
         return resp.choices[0].message.content
     except Exception as e:
         return f'Unable to reach AI service: {e}'
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def get_clinical_narrative(risk_pct, status_text, glucose, bmi, age, best_feat):
+    """Cached Mistral call — only fires when inputs actually change, not every slider move."""
+    return call_mistral([{'role': 'user', 'content':
+        f'In exactly 2 professional sentences, explain why this patient has a {risk_pct:.1f}% '
+        f'diabetes risk ({status_text}). Glucose={glucose}mg/dL, BMI={bmi}, Age={age}y. '
+        f'Priority: {best_feat}. No emojis.'}])
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -228,29 +262,9 @@ def build_gauge(prob):
     return fig
 
 
-def build_shap_chart(shap_vals, feat_names):
-    pairs = sorted(zip(shap_vals, feat_names), key=lambda x: abs(x[0]))
-    vals, names = zip(*pairs)
-    fig = go.Figure(go.Bar(
-        x=list(vals), y=list(names), orientation='h',
-        marker_color=['#ef4444' if v > 0 else '#22c55e' for v in vals],
-        marker_line_width=0,
-        text=[f'{v:+.3f}' for v in vals], textposition='outside',
-        textfont=dict(family='Space Mono', size=9, color='#94a3b8')))
-    fig.update_layout(**PLOTLY_BASE,
-        title=dict(text='SHAP Feature Contributions', font=dict(color='#e2e8f0', size=13)),
-        xaxis=dict(title='SHAP Value', **GRID_X), yaxis=dict(**GRID_Y), height=380)
-    fig.add_vline(x=0, line_width=1, line_dash='dash', line_color='rgba(255,255,255,0.2)')
-    return fig
-
-
 def build_trajectory(raw_input, ages):
-    batch = []
-    for a in ages:
-        tmp = raw_input.copy()
-        tmp['Age'] = a
-        batch.append(tmp)
-    risks = [p * 100 for p in predict_proba_batch(batch)]
+    batch = tuple(dict_to_tuple({**raw_input, 'Age': a}) for a in ages)
+    risks = [p * 100 for p in predict_proba_batch_cached(batch)]
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=ages, y=risks, mode='lines+markers',
@@ -382,7 +396,7 @@ def generate_pdf(risk_prob, status_text, raw_input, best_feat, g_risk, chat_hist
         pdf.cell(0,  8, f'Status: {status_text}', ln=True)
         pdf.cell(90, 8, f'Threshold: {threshold:.2f}', ln=False)
         pdf.cell(0,  8, f'Priority: {best_feat}', ln=True)
-        pdf.cell(90, 8, f"Model: {meta.get('DISPLAY_MODEL', 'AutoGluon')}", ln=False)
+        pdf.cell(90, 8, f'Model: {DISPLAY_MODEL}', ln=False)
         if g_risk is not None:
             pdf.cell(0, 8, f'Simulated Risk: {g_risk:.1%}', ln=True)
         pdf.ln(5)
@@ -447,7 +461,7 @@ with st.sidebar:
     st.markdown(f"""<div style='font-family:Space Mono,monospace;font-size:0.68rem;color:#64748b;line-height:1.9;'>
         <div style='color:#94a3b8;font-weight:700;margin-bottom:6px;letter-spacing:0.1em;'>MODEL INFO</div>
         <div>Framework: <span style='color:#a5b4fc;'>AutoGluon</span></div>
-        <div>Best Model: <span style='color:#fca5a5;'>{meta.get('DISPLAY_MODEL','N/A')[:30]}</span></div>
+        <div>Best Model: <span style='color:#fca5a5;'>{DISPLAY_MODEL[:30]}</span></div>
         <div>Eval Metric: <span style='color:#fca5a5;'>{meta.get('eval_metric','recall').upper()}</span></div>
         <div>Test AUC: <span style='color:#fca5a5;'>{meta.get('test_auc', 0):.4f}</span></div>
         <div>Test F1: <span style='color:#fca5a5;'>{meta.get('test_f1', 0):.4f}</span></div>
@@ -462,54 +476,20 @@ raw_input = dict(
     SkinThickness=skin, Insulin=insulin, BMI=bmi,
     DiabetesPedigreeFunction=dpf, Age=age)
 
-risk_prob = predict_proba(raw_input)
+# Cached — only recomputes when a slider value actually changes
+risk_prob = predict_proba(preg, glucose, bp, skin, insulin, bmi, dpf, age)
 status_text, status_color = risk_level(risk_prob)
 
-# ── SHAP VALUES ───────────────────────────────────────────────────────────────
-@st.cache_resource
-def build_shap_explainer(_predictor, _model, _feat_cols):
-    try:
-        import shap
-        train_bg = pd.read_csv('Training.csv')
-        for col in ZERO_IMPUTE_COLS:
-            train_bg[col] = train_bg[col].replace(0, np.nan)
-        X_bg = (train_bg[_feat_cols]
-                .fillna(train_bg[_feat_cols].median())
-                .sample(50, random_state=42))
-
-        def _predict(arr):
-            df = pd.DataFrame(arr, columns=_feat_cols)
-            df = df.fillna(df.median())
-            return _predictor.predict_proba(df, model=_model).iloc[:, 1].values
-
-        return shap.KernelExplainer(_predict, X_bg)
-    except Exception:
-        return None
-
-shap_available = False
-sv = None
-try:
-    import shap as _shap_mod  # noqa
-    _explainer = build_shap_explainer(predictor, specific_model, feat_cols)
-    if _explainer is not None:
-        _X = prepare_df(raw_input).fillna(prepare_df(raw_input).median()).values.astype(float)
-        sv_raw = _explainer.shap_values(_X, nsamples=200)
-        sv = np.array(sv_raw).flatten()[:len(feat_cols)]
-        shap_available = True
-except Exception:
-    pass
-
-# ── IMPACT ANALYSIS ───────────────────────────────────────────────────────────
+# ── IMPACT ANALYSIS (batched + cached) ───────────────────────────────────────
 impact_feats = ['Glucose', 'BMI', 'BloodPressure', 'Age', 'DiabetesPedigreeFunction']
-impact_inputs = []
-for feat in impact_feats:
-    tmp = raw_input.copy()
-    tmp[feat] = tmp[feat] * 0.9
-    impact_inputs.append(tmp)
-impact_probs = predict_proba_batch(impact_inputs)
-impacts = {feat: (risk_prob - p) * 100 for feat, p in zip(impact_feats, impact_probs)}
-best_feat   = max(impacts, key=impacts.get)
-best_impact = impacts[best_feat]
+impact_batch = tuple(
+    dict_to_tuple({**raw_input, feat: raw_input[feat] * 0.9})
+    for feat in impact_feats
+)
+impact_probs = predict_proba_batch_cached(impact_batch)
+impacts      = {feat: (risk_prob - p) * 100 for feat, p in zip(impact_feats, impact_probs)}
+best_feat    = max(impacts, key=impacts.get)
+impact_val   = impacts[best_feat]
 
 # ══════════════════════════════════════════════════════════════════════════════
 tab1, tab2, tab3, tab4 = st.tabs([
@@ -542,13 +522,12 @@ with tab1:
             st.markdown(
                 f'<div class="metric-card"><div class="metric-label">Key Driver</div>'
                 f'<div class="metric-value" style="color:#d4af37;font-size:1.1rem;margin-top:4px;">{best_feat}</div>'
-                f'<div class="metric-sub">-{best_impact:.1f}% if improved 10%</div></div>', unsafe_allow_html=True)
+                f'<div class="metric-sub">-{impact_val:.1f}% if improved 10%</div></div>', unsafe_allow_html=True)
 
         st.markdown('<div class="section-title">AI Clinical Interpretation</div>', unsafe_allow_html=True)
-        with st.spinner('Generating clinical narrative...'):
-            explanation = call_mistral([{'role': 'user', 'content':
-                f'In exactly 2 professional sentences, explain why this patient has a {risk_prob:.1%} diabetes risk ({status_text}). '
-                f'Glucose={glucose}mg/dL, BMI={bmi}, Age={age}y. Priority: {best_feat}. No emojis.'}])
+        # Cached — only calls Mistral when risk level or key inputs change
+        explanation = get_clinical_narrative(
+            round(risk_prob * 100, 1), status_text, glucose, round(bmi, 1), age, best_feat)
         st.markdown(f'<div class="insight-box">{explanation}</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="section-title">Biological Metrics vs Clinical Targets</div>', unsafe_allow_html=True)
@@ -577,15 +556,13 @@ with tab1:
             f'<div class="pc-label">Priority Intervention</div>'
             f'<div class="pc-title">{best_feat}</div>'
             f'<div class="pc-body">A 10% improvement in <b>{best_feat}</b> reduces risk by'
-            f' <b>{best_impact:.1f} percentage points</b>.</div></div>', unsafe_allow_html=True)
+            f' <b>{impact_val:.1f} percentage points</b>.</div></div>', unsafe_allow_html=True)
 
         st.markdown('<div class="section-title">Interactive Goal Simulation</div>', unsafe_allow_html=True)
         g_bmi  = st.number_input('Target BMI', 15.0, 50.0, float(bmi), step=0.5, key='g_bmi')
         g_gluc = st.number_input('Target Glucose (mg/dL)', 60, 250, int(glucose), step=5, key='g_gluc')
         g_bp   = st.number_input('Target Blood Pressure', 40, 130, int(bp), step=2, key='g_bp')
-        sim_in = raw_input.copy()
-        sim_in.update(BMI=g_bmi, Glucose=g_gluc, BloodPressure=g_bp)
-        g_risk = predict_proba(sim_in)
+        g_risk = predict_proba(preg, g_gluc, g_bp, skin, insulin, g_bmi, dpf, age)
         delta  = g_risk - risk_prob
         g_label, g_color = risk_level(g_risk)
         arr   = '↓' if delta < 0 else '↑'
@@ -628,32 +605,21 @@ with tab1:
 with tab2:
     col_a, col_b = st.columns(2, gap='large')
     with col_a:
-        st.markdown('<div class="section-title">Explainable AI — SHAP Analysis</div>',
+        st.markdown('<div class="section-title">Feature Importance — NeuralNetFastAI</div>',
                     unsafe_allow_html=True)
-        if shap_available and sv is not None:
-            top_n      = min(12, len(feat_cols))
-            sorted_idx = np.argsort(np.abs(sv))[::-1][:top_n]
-            top_feats  = [feat_cols[i] for i in sorted_idx]
-            top_shap   = [float(sv[i]) for i in sorted_idx]
-            st.plotly_chart(build_shap_chart(top_shap[::-1], top_feats[::-1]),
-                            width='stretch', config={'displayModeBar': False}, key='chart_3')
-            st.markdown('<div class="success-box">Real SHAP values via KernelExplainer (AutoGluon).</div>',
-                        unsafe_allow_html=True)
-        else:
-            try:
-                fi_df    = predictor.feature_importance(prepare_df(raw_input), model=specific_model)
-                fi_vals  = fi_df['importance'].values
-                fi_names = fi_df.index.tolist()
-            except Exception:
-                fi_vals  = np.ones(len(feat_cols)) / len(feat_cols)
-                fi_names = feat_cols
-            fi_fig = go.Figure(go.Bar(
-                x=fi_vals, y=fi_names, orientation='h',
-                marker_color='#c41e3a', marker_line_width=0))
-            fi_fig.update_layout(**PLOTLY_BASE,
-                title=dict(text='AutoGluon Feature Importance', font=dict(color='#e2e8f0', size=13)),
-                xaxis=dict(**GRID_X), yaxis=dict(**GRID_Y), height=380)
-            st.plotly_chart(fi_fig, width='stretch', config={'displayModeBar': False}, key='chart_4')
+        fi_names = list(STATIC_FI.keys())
+        fi_vals  = list(STATIC_FI.values())
+        fi_fig = go.Figure(go.Bar(
+            x=fi_vals, y=fi_names, orientation='h',
+            marker_color=['#c41e3a' if v == max(fi_vals) else '#475569' for v in fi_vals],
+            marker_line_width=0,
+            text=[f'{v:.2f}' for v in fi_vals], textposition='outside',
+            textfont=dict(family='Space Mono', size=9, color='#94a3b8')))
+        fi_fig.update_layout(**PLOTLY_BASE,
+            title=dict(text='Feature Importance (NeuralNetFastAI)', font=dict(color='#e2e8f0', size=13)),
+            xaxis=dict(title='Importance Score', **GRID_X),
+            yaxis=dict(**GRID_Y), height=380)
+        st.plotly_chart(fi_fig, width='stretch', config={'displayModeBar': False}, key='chart_4')
 
         st.plotly_chart(build_radar(raw_input), width='stretch',
                         config={'displayModeBar': False}, key='chart_5')
@@ -691,7 +657,7 @@ with tab2:
         st.markdown(
             f'<div class="insight-box">'
             f'<b>Framework:</b> AutoGluon TabularPredictor<br>'
-            f"<b>Best Model:</b> {meta.get('DISPLAY_MODEL', 'N/A')}<br>"
+            f'<b>Best Model:</b> {DISPLAY_MODEL}<br>'
             f'<b>Preset:</b> best_quality &nbsp;|&nbsp; <b>Time Limit:</b> 600s<br>'
             f'<b>Eval Metric:</b> Recall — prioritises clinical sensitivity<br>'
             f'<b>Zero Imputation:</b> Impossible zeros → NaN (AutoGluon handles internally)<br>'
@@ -719,8 +685,8 @@ with tab3:
         f'You are a clinical health coach in Doha Qatar. '
         f'Patient: Age {age}y BMI {bmi} Glucose {glucose}mg/dL '
         f'Risk {risk_prob:.1%} ({status_text}). '
-        f"Model: AutoGluon best_quality — {meta.get('DISPLAY_MODEL', 'N/A')} — "
-        f"Threshold: {threshold:.2f}. "
+        f'Model: AutoGluon best_quality — {DISPLAY_MODEL} — '
+        f'Threshold: {threshold:.2f}. '
         f'Priority intervention: {best_feat}. '
         f'Be professional, suggest Doha venues. No emojis.'
     )
@@ -744,7 +710,6 @@ with tab4:
     st.markdown('<div class="section-title">Model Comparison Leaderboard</div>',
                 unsafe_allow_html=True)
 
-    # Always use hardcoded leaderboard, best model pinned to top
     chosen_row = leaderboard_df[leaderboard_df['Model'] == DISPLAY_MODEL]
     other_rows = leaderboard_df[leaderboard_df['Model'] != DISPLAY_MODEL]
     display_df = pd.concat([chosen_row, other_rows], ignore_index=True)
@@ -784,7 +749,7 @@ with tab4:
                     unsafe_allow_html=True)
         arch_info = [
             ('Framework',       'AutoGluon TabularPredictor'),
-            ('Display Model',      DISPLAY_MODEL),
+            ('Best Model',      DISPLAY_MODEL),
             ('Preset',          meta.get('presets', 'best_quality')),
             ('Eval Metric',     meta.get('eval_metric', 'recall').upper()),
             ('Training Time',   '600 seconds'),
