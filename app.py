@@ -91,7 +91,9 @@ def load_artifacts():
             require_py_version_match=False
         )
 
-        specific_model = 'XGBoost_r22_BAG_L1'
+        all_models = predictor.model_names()
+        xgb_models = [m for m in all_models if 'XGBoost' in m and 'BAG_L2' not in m]
+        specific_model = xgb_models[0] if xgb_models else all_models[0]
         threshold      = meta.get('threshold', 0.5)
         feat_cols      = meta.get('features', [
             'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
