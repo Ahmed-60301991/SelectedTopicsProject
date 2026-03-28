@@ -1,11 +1,11 @@
-setuptools
 streamlit
 pandas
 numpy
 joblib
 plotly
-autogluon.tabular==1.2.0
+autogluon.tabular
 mistralai
 fpdf
 shap
 matplotlib
+setuptools
