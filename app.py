@@ -146,17 +146,28 @@ def prepare_df(raw: dict) -> pd.DataFrame:
 
 
 def predict_proba(raw_input_data):
-    """Ensure input is a DataFrame and get prediction probabilities."""
+    """Single-row prediction."""
     try:
         if isinstance(raw_input_data, pd.DataFrame):
             df = raw_input_data
         else:
             df = pd.DataFrame([raw_input_data])
-        probs = predictor.predict_proba(df, model=specific_model)
-        return float(probs.iloc[0, 1])
+        probs = predictor.predict_proba(df, model=specific_model, as_pandas=False)
+        return float(probs[0, 1])
     except Exception as e:
         st.error(f"Prediction Error: {e}")
         return 0.0
+
+
+def predict_proba_batch(list_of_dicts):
+    """Batch prediction — much faster than calling predict_proba in a loop."""
+    try:
+        df = pd.DataFrame(list_of_dicts)
+        probs = predictor.predict_proba(df, model=specific_model, as_pandas=False)
+        return probs[:, 1].tolist()
+    except Exception as e:
+        st.error(f"Batch Prediction Error: {e}")
+        return [0.0] * len(list_of_dicts)
 
 
 # ── MISTRAL AI ────────────────────────────────────────────────────────────────
@@ -236,11 +247,12 @@ def build_shap_chart(shap_vals, feat_names):
 
 
 def build_trajectory(raw_input, ages):
-    risks = []
+    batch = []
     for a in ages:
         tmp = raw_input.copy()
         tmp['Age'] = a
-        risks.append(predict_proba(tmp) * 100)
+        batch.append(tmp)
+    risks = [p * 100 for p in predict_proba_batch(batch)]
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=ages, y=risks, mode='lines+markers',
@@ -490,11 +502,14 @@ except Exception:
     pass
 
 # ── IMPACT ANALYSIS ───────────────────────────────────────────────────────────
-impacts = {}
-for feat in ['Glucose', 'BMI', 'BloodPressure', 'Age', 'DiabetesPedigreeFunction']:
+impact_feats = ['Glucose', 'BMI', 'BloodPressure', 'Age', 'DiabetesPedigreeFunction']
+impact_inputs = []
+for feat in impact_feats:
     tmp = raw_input.copy()
     tmp[feat] = tmp[feat] * 0.9
-    impacts[feat] = (risk_prob - predict_proba(tmp)) * 100
+    impact_inputs.append(tmp)
+impact_probs = predict_proba_batch(impact_inputs)
+impacts = {feat: (risk_prob - p) * 100 for feat, p in zip(impact_feats, impact_probs)}
 best_feat   = max(impacts, key=impacts.get)
 best_impact = impacts[best_feat]
 
