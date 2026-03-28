@@ -89,10 +89,7 @@ def load_artifacts():
         )
 
         # Auto-select fastest available model for predictions
-        all_models  = predictor.model_names()
-        xgb_models  = [m for m in all_models if 'XGBoost'  in m and 'BAG_L2' not in m]
-        lgbm_models = [m for m in all_models if 'LightGBM' in m and 'BAG_L2' not in m]
-        fast_model  = xgb_models[0] if xgb_models else (lgbm_models[0] if lgbm_models else all_models[0])
+        fast_model = meta.get('best_model')
 
         threshold = meta.get('threshold', 0.5)
         feat_cols = meta.get('features', [
