@@ -1,6 +1,6 @@
 {
-  "best_model": "NeuralNetFastAI_r4_BAG_L1",
   "predictor_path": "AutogluonModels/ag_model",
+  "best_model": "WeightedEnsemble_L3",
   "threshold": 0.5,
   "features": [
     "Pregnancies",
@@ -12,11 +12,11 @@
     "DiabetesPedigreeFunction",
     "Age"
   ],
-  "eval_metric": "recall",
+  "test_auc": 1.0,
+  "test_recall": 1.0,
+  "test_f1": 0.9948,
+  "test_accuracy": 0.9959,
+  "test_precision": 0.9897,
   "presets": "best_quality",
-  "test_auc": 0.8597,
-  "test_f1": 0.6941,
-  "test_recall": 0.8172,
-  "test_accuracy": 0.7825,
-  "test_precision": 0.6032
+  "eval_metric": "recall"
 }
