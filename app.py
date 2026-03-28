@@ -91,7 +91,7 @@ def load_artifacts():
             require_py_version_match=False
         )
 
-        specific_model = meta.get('DISPLAY_MODEL')
+        specific_model = 'XGBoost_r22_BAG_L1'
         threshold      = meta.get('threshold', 0.5)
         feat_cols      = meta.get('features', [
             'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
