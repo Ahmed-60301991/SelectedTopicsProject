@@ -785,7 +785,6 @@ with tab2:
             xaxis=dict(**GRID_X),
             yaxis=dict(title='Contribution (%)', **GRID_Y), height=280)
         st.plotly_chart(contrib_fig, width='stretch', config={'displayModeBar': False}, key='chart_7')
-        f'</div>', unsafe_allow_html=True)
 
 
 # ── TAB 3 — AI Health Coach ───────────────────────────────────────────────────
