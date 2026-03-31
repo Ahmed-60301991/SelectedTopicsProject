@@ -88,8 +88,10 @@ def load_artifacts():
             require_version_match=False, require_py_version_match=False
         )
 
-        # Auto-select fastest available model for predictions
-        fast_model = meta.get('best_model')
+        all_models  = predictor.model_names()
+        xgb_models  = [m for m in all_models if 'XGBoost'  in m and 'BAG_L2' not in m]
+        lgbm_models = [m for m in all_models if 'LightGBM' in m and 'BAG_L2' not in m]
+        fast_model  = xgb_models[0] if xgb_models else (lgbm_models[0] if lgbm_models else all_models[0])
 
         threshold = meta.get('threshold', 0.5)
         feat_cols = meta.get('features', [
@@ -132,7 +134,6 @@ meta['test_f1']        = 0.6941
 meta['test_accuracy']  = 0.7825
 meta['test_precision'] = 0.6032
 
-# Static feature importance — no model call needed, instant
 STATIC_FI = {
     'Glucose': 0.38, 'BMI': 0.22, 'Age': 0.14,
     'DiabetesPedigreeFunction': 0.12, 'BloodPressure': 0.07,
@@ -151,7 +152,6 @@ def prepare_df(raw: dict) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def predict_proba(preg, glucose, bp, skin, insulin, bmi, dpf, age):
-    """Cached — only reruns when slider values actually change."""
     try:
         raw = dict(Pregnancies=preg, Glucose=glucose, BloodPressure=bp,
                    SkinThickness=skin, Insulin=insulin, BMI=bmi,
@@ -169,7 +169,6 @@ def predict_proba(preg, glucose, bp, skin, insulin, bmi, dpf, age):
 
 @st.cache_data(show_spinner=False)
 def predict_proba_batch_cached(input_tuples):
-    """Cached batch — input_tuples is a tuple of (preg,gluc,bp,skin,ins,bmi,dpf,age)."""
     try:
         rows = [dict(Pregnancies=p, Glucose=g, BloodPressure=bp, SkinThickness=sk,
                      Insulin=ins, BMI=b, DiabetesPedigreeFunction=d, Age=a)
@@ -218,7 +217,6 @@ def call_mistral(messages, system=''):
 
 @st.cache_data(show_spinner=False, ttl=300)
 def get_clinical_narrative(risk_pct, status_text, glucose, bmi, age, best_feat):
-    """Cached Mistral call — only fires when inputs actually change, not every slider move."""
     return call_mistral([{'role': 'user', 'content':
         f'In exactly 2 professional sentences, explain why this patient has a {risk_pct:.1f}% '
         f'diabetes risk ({status_text}). Glucose={glucose}mg/dL, BMI={bmi}, Age={age}y. '
@@ -231,6 +229,216 @@ def risk_level(prob: float):
     elif prob < 0.45: return 'Borderline',   '#eab308'
     elif prob < 0.65: return 'Pre-Diabetic', '#f97316'
     else:             return 'High Risk',    '#ef4444'
+
+
+# ── PDF GENERATION ────────────────────────────────────────────────────────────
+def generate_pdf(risk_prob, status_text, raw_input, best_feat, impact_val,
+                 g_risk, g_gluc, g_bmi, g_bp, explanation, chat_history):
+    try:
+        from fpdf import FPDF
+        from datetime import datetime
+
+        def safe(txt):
+            """Strip non-latin characters so fpdf doesn't crash."""
+            return txt.encode('latin-1', errors='replace').decode('latin-1')
+
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+
+        # ── PAGE 1: Clinical Summary ──────────────────────────────────────────
+        pdf.add_page()
+        pdf.set_fill_color(100, 0, 20)
+        pdf.rect(0, 0, 210, 38, 'F')
+        pdf.set_font('Arial', 'B', 20)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_y(7)
+        pdf.cell(0, 10, 'SELECTED TOPICS PROJECT', ln=True, align='C')
+        pdf.set_font('Arial', 'B', 13)
+        pdf.set_text_color(220, 180, 180)
+        pdf.cell(0, 7, 'Diabetes Clinical Risk Assessment Report', ln=True, align='C')
+        pdf.set_font('Arial', '', 9)
+        pdf.set_text_color(200, 160, 160)
+        pdf.cell(0, 5, f"Generated: {datetime.now().strftime('%B %d, %Y at %H:%M')}",
+                 ln=True, align='C')
+
+        pdf.set_y(46)
+
+        def section(title):
+            pdf.set_font('Arial', 'B', 12)
+            pdf.set_text_color(150, 0, 30)
+            pdf.cell(0, 7, title, ln=True)
+            pdf.set_draw_color(150, 0, 30)
+            pdf.set_line_width(0.4)
+            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+            pdf.ln(3)
+
+        def row(label, value, label_w=70):
+            pdf.set_font('Arial', '', 10)
+            pdf.set_text_color(80, 80, 80)
+            pdf.cell(label_w, 7, label + ':', ln=False)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font('Arial', 'B', 10)
+            pdf.cell(0, 7, safe(str(value)), ln=True)
+
+        # Risk summary box
+        r_label, _ = risk_level(risk_prob)
+        pdf.set_fill_color(245, 235, 235)
+        pdf.set_draw_color(150, 0, 30)
+        pdf.set_line_width(0.5)
+        pdf.rect(10, pdf.get_y(), 190, 22, 'FD')
+        pdf.set_font('Arial', 'B', 14)
+        pdf.set_text_color(100, 0, 20)
+        pdf.set_x(10)
+        pdf.cell(95, 11, f'Risk Score:  {risk_prob:.1%}', ln=False, align='C')
+        pdf.cell(95, 11, f'Diagnosis:  {status_text}', ln=True, align='C')
+        pdf.set_font('Arial', '', 10)
+        pdf.set_text_color(80, 80, 80)
+        pdf.set_x(10)
+        pdf.cell(190, 11, f'Priority Intervention:  {best_feat}  —  10% improvement reduces risk by {impact_val:.1f} pp', ln=True, align='C')
+        pdf.ln(5)
+
+        # AI Interpretation
+        section('AI Clinical Interpretation')
+        pdf.set_font('Arial', 'I', 10)
+        pdf.set_text_color(40, 40, 40)
+        pdf.multi_cell(0, 6, safe(explanation))
+        pdf.ln(3)
+
+        # Patient bio-data
+        section('Patient Bio-Data')
+        fields = [
+            ('Pregnancies',          raw_input['Pregnancies']),
+            ('Glucose (mg/dL)',       raw_input['Glucose']),
+            ('Blood Pressure (mmHg)', raw_input['BloodPressure']),
+            ('Skin Thickness (mm)',   raw_input['SkinThickness']),
+            ('Insulin (uU/mL)',       raw_input['Insulin']),
+            ('BMI (kg/m²)',           f"{raw_input['BMI']:.1f}"),
+            ('Diabetes Pedigree',     f"{raw_input['DiabetesPedigreeFunction']:.2f}"),
+            ('Age (years)',           raw_input['Age']),
+        ]
+        for i in range(0, len(fields), 2):
+            pdf.set_font('Arial', '', 10)
+            pdf.set_text_color(80, 80, 80)
+            pdf.cell(25, 7, fields[i][0] + ':', ln=False)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font('Arial', 'B', 10)
+            pdf.cell(65, 7, str(fields[i][1]), ln=False)
+            if i + 1 < len(fields):
+                pdf.set_font('Arial', '', 10)
+                pdf.set_text_color(80, 80, 80)
+                pdf.cell(30, 7, fields[i+1][0] + ':', ln=False)
+                pdf.set_text_color(0, 0, 0)
+                pdf.set_font('Arial', 'B', 10)
+                pdf.cell(0, 7, str(fields[i+1][1]), ln=True)
+            else:
+                pdf.ln()
+        pdf.ln(3)
+
+        # Clinical targets
+        section('Biological Metrics vs Clinical Targets')
+        headers = ['Metric', 'Patient Value', 'Target', 'Status']
+        col_w   = [55, 45, 45, 40]
+        pdf.set_font('Arial', 'B', 9)
+        pdf.set_fill_color(100, 0, 20)
+        pdf.set_text_color(255, 255, 255)
+        for h, w in zip(headers, col_w):
+            pdf.cell(w, 7, h, border=1, fill=True)
+        pdf.ln()
+        bio_rows = [
+            ('Glucose',        f"{raw_input['Glucose']} mg/dL",          '< 100 mg/dL',   'OK' if raw_input['Glucose'] < 100   else 'HIGH'),
+            ('BMI',            f"{raw_input['BMI']:.1f} kg/m2",           '18.5 - 24.9',   'OK' if 18.5 <= raw_input['BMI'] <= 24.9 else 'HIGH'),
+            ('Blood Pressure', f"{raw_input['BloodPressure']} mmHg",      '< 80 mmHg',     'OK' if raw_input['BloodPressure'] < 80  else 'HIGH'),
+            ('Insulin',        f"{raw_input['Insulin']} uU/mL",           '< 166 uU/mL',   'OK' if raw_input['Insulin'] < 166   else 'HIGH'),
+        ]
+        for m, v, t, s in bio_rows:
+            pdf.set_font('Arial', '', 9)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_fill_color(248, 248, 248)
+            pdf.cell(col_w[0], 6, m, border=1, fill=True)
+            pdf.cell(col_w[1], 6, v, border=1)
+            pdf.cell(col_w[2], 6, t, border=1)
+            pdf.set_font('Arial', 'B', 9)
+            pdf.set_text_color(0, 140, 0) if s == 'OK' else pdf.set_text_color(200, 0, 0)
+            pdf.cell(col_w[3], 6, s, border=1)
+            pdf.ln()
+        pdf.ln(4)
+
+        # Goal simulation
+        section('Goal Simulation Results')
+        row('Target Glucose',       f'{g_gluc} mg/dL')
+        row('Target BMI',           f'{g_bmi:.1f} kg/m2')
+        row('Target Blood Pressure',f'{g_bp} mmHg')
+        delta = g_risk - risk_prob
+        direction = 'decrease' if delta < 0 else 'increase'
+        row('Simulated Risk Score',  f'{g_risk:.1%}  ({direction} of {abs(delta):.1%})')
+        pdf.ln(2)
+
+        # Intervention impact
+        section('Intervention Impact Analysis (10% Improvement per Feature)')
+        headers2 = ['Feature', 'Risk Reduction (pp)']
+        col_w2   = [100, 85]
+        pdf.set_font('Arial', 'B', 9)
+        pdf.set_fill_color(100, 0, 20)
+        pdf.set_text_color(255, 255, 255)
+        for h, w in zip(headers2, col_w2):
+            pdf.cell(w, 7, h, border=1, fill=True)
+        pdf.ln()
+        # We just show the impact_val for best_feat; others not passed but we can show best
+        pdf.set_font('Arial', '', 9)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_fill_color(255, 240, 240)
+        pdf.cell(col_w2[0], 6, f'{best_feat} (Priority)', border=1, fill=True)
+        pdf.set_font('Arial', 'B', 9)
+        pdf.cell(col_w2[1], 6, f'-{impact_val:.2f} pp', border=1)
+        pdf.ln(8)
+
+        # ── PAGE 2: AI Health Coach Transcript ───────────────────────────────
+        if chat_history:
+            pdf.add_page()
+            pdf.set_fill_color(100, 0, 20)
+            pdf.rect(0, 0, 210, 20, 'F')
+            pdf.set_font('Arial', 'B', 14)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_y(5)
+            pdf.cell(0, 10, 'AI Health Coach Conversation Transcript', ln=True, align='C')
+            pdf.set_y(28)
+
+            for msg in chat_history:
+                role = msg.get('role', '')
+                content = safe(msg.get('content', ''))
+                if role == 'user':
+                    pdf.set_fill_color(230, 240, 255)
+                    pdf.set_text_color(0, 50, 120)
+                    pdf.set_font('Arial', 'B', 9)
+                    label = 'You'
+                else:
+                    pdf.set_fill_color(240, 255, 240)
+                    pdf.set_text_color(0, 80, 0)
+                    pdf.set_font('Arial', 'B', 9)
+                    label = 'AI Coach'
+
+                # Label bar
+                pdf.set_x(10)
+                pdf.cell(190, 5, label, ln=True, fill=True)
+                # Message body
+                pdf.set_font('Arial', '', 9)
+                pdf.set_text_color(30, 30, 30)
+                pdf.set_x(14)
+                pdf.multi_cell(183, 5, content)
+                pdf.ln(2)
+
+        # Footer on all pages
+        pdf.set_y(-12)
+        pdf.set_font('Arial', 'I', 7)
+        pdf.set_text_color(150, 150, 150)
+        pdf.cell(0, 5, 'Selected Topics Project (DSAI4201) — For educational purposes only. Not a medical diagnosis.',
+                 align='C')
+
+        return pdf.output(dest='S').encode('latin-1')
+
+    except Exception as e:
+        st.error(f"PDF Error: {e}")
+        return None
 
 
 # ── CHARTS ────────────────────────────────────────────────────────────────────
@@ -363,71 +571,6 @@ def build_confusion_matrix():
         return None
 
 
-def generate_pdf(risk_prob, status_text, raw_input, best_feat, g_risk, chat_history):
-    try:
-        from fpdf import FPDF
-        from datetime import datetime
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_fill_color(128, 0, 0)
-        pdf.rect(0, 0, 210, 35, 'F')
-        pdf.set_font('Arial', 'B', 22)
-        pdf.set_text_color(255, 255, 255)
-        pdf.set_y(8)
-        pdf.cell(0, 10, 'SELECTED TOPICS PROJECT - CLINICAL RISK ASSESSMENT', ln=True, align='C')
-        pdf.set_font('Arial', '', 10)
-        pdf.set_text_color(220, 180, 180)
-        pdf.cell(0, 6, f"Generated: {datetime.now().strftime('%B %d, %Y at %H:%M')}",
-                 ln=True, align='C')
-        pdf.set_y(45)
-        pdf.set_font('Arial', 'B', 14)
-        pdf.set_text_color(128, 0, 0)
-        pdf.cell(0, 8, 'DIAGNOSTIC SUMMARY', ln=True)
-        pdf.set_draw_color(128, 0, 0)
-        pdf.set_line_width(0.5)
-        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-        pdf.ln(3)
-        pdf.set_font('Arial', '', 11)
-        pdf.set_text_color(0, 0, 0)
-        pdf.cell(90, 8, f'Risk Score: {risk_prob:.1%}', ln=False)
-        pdf.cell(0,  8, f'Status: {status_text}', ln=True)
-        pdf.cell(90, 8, f'Threshold: {threshold:.2f}', ln=False)
-        pdf.cell(0,  8, f'Priority: {best_feat}', ln=True)
-        pdf.cell(90, 8, f'Model: {DISPLAY_MODEL}', ln=False)
-        if g_risk is not None:
-            pdf.cell(0, 8, f'Simulated Risk: {g_risk:.1%}', ln=True)
-        pdf.ln(5)
-        pdf.set_font('Arial', 'B', 14)
-        pdf.set_text_color(128, 0, 0)
-        pdf.cell(0, 8, 'PATIENT BIO-DATA', ln=True)
-        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-        pdf.ln(3)
-        pdf.set_font('Arial', '', 11)
-        pdf.set_text_color(0, 0, 0)
-        fields = [
-            ('Pregnancies',       raw_input['Pregnancies']),
-            ('Glucose (mg/dL)',   raw_input['Glucose']),
-            ('Blood Pressure',    raw_input['BloodPressure']),
-            ('Skin Thickness',    raw_input['SkinThickness']),
-            ('Insulin',           raw_input['Insulin']),
-            ('BMI',               raw_input['BMI']),
-            ('Pedigree',          raw_input['DiabetesPedigreeFunction']),
-            ('Age',               raw_input['Age']),
-        ]
-        for i, (k, v) in enumerate(fields):
-            if i % 2 == 0:
-                pdf.cell(90, 7, f'{k}: {v}', ln=False)
-            else:
-                pdf.cell(0, 7, f'{k}: {v}', ln=True)
-        pdf.set_y(-20)
-        pdf.set_font('Arial', 'I', 8)
-        pdf.set_text_color(150, 150, 150)
-        pdf.cell(0, 6, 'Selected Topics Project report - informational only.', ln=True, align='C')
-        return pdf.output(dest='S').encode('latin-1')
-    except Exception:
-        return None
-
-
 # ── HEADER ────────────────────────────────────────────────────────────────────
 st.markdown('''
 <div class="aura-header">
@@ -456,14 +599,10 @@ with st.sidebar:
     age     = st.slider('Age (years)', 21, 81, 33)
     st.markdown("<div class='aura-divider'></div>", unsafe_allow_html=True)
     st.markdown(f"""<div style='font-family:Space Mono,monospace;font-size:0.68rem;color:#64748b;line-height:1.9;'>
-        <div style='color:#94a3b8;font-weight:700;margin-bottom:6px;letter-spacing:0.1em;'>MODEL INFO</div>
-        <div>Framework: <span style='color:#a5b4fc;'>AutoGluon</span></div>
-        <div>Best Model: <span style='color:#fca5a5;'>{DISPLAY_MODEL[:30]}</span></div>
-        <div>Eval Metric: <span style='color:#fca5a5;'>{meta.get('eval_metric','recall').upper()}</span></div>
+        <div style='color:#94a3b8;font-weight:700;margin-bottom:6px;letter-spacing:0.1em;'>RISK SUMMARY</div>
         <div>Test AUC: <span style='color:#fca5a5;'>{meta.get('test_auc', 0):.4f}</span></div>
         <div>Test F1: <span style='color:#fca5a5;'>{meta.get('test_f1', 0):.4f}</span></div>
         <div>Test Recall: <span style='color:#fca5a5;'>{meta.get('test_recall', 0):.4f}</span></div>
-        <div>Threshold: <span style='color:#fca5a5;'>{threshold:.2f}</span></div>
     </div>""", unsafe_allow_html=True)
     st.markdown("<div class='ag-badge'>⚡ AutoGluon Active</div>", unsafe_allow_html=True)
 
@@ -473,7 +612,6 @@ raw_input = dict(
     SkinThickness=skin, Insulin=insulin, BMI=bmi,
     DiabetesPedigreeFunction=dpf, Age=age)
 
-# Cached — only recomputes when a slider value actually changes
 risk_prob = predict_proba(preg, glucose, bp, skin, insulin, bmi, dpf, age)
 status_text, status_color = risk_level(risk_prob)
 
@@ -487,6 +625,10 @@ impact_probs = predict_proba_batch_cached(impact_batch)
 impacts      = {feat: (risk_prob - p) * 100 for feat, p in zip(impact_feats, impact_probs)}
 best_feat    = max(impacts, key=impacts.get)
 impact_val   = impacts[best_feat]
+
+# ── CLINICAL NARRATIVE (cached) ───────────────────────────────────────────────
+explanation = get_clinical_narrative(
+    round(risk_prob * 100, 1), status_text, glucose, round(bmi, 1), age, best_feat)
 
 # ══════════════════════════════════════════════════════════════════════════════
 tab1, tab2, tab3, tab4 = st.tabs([
@@ -514,7 +656,7 @@ with tab1:
             st.markdown(
                 f'<div class="metric-card"><div class="metric-label">Diagnosis</div>'
                 f'<div class="metric-value" style="color:{status_color};font-size:1rem;margin-top:6px;">{status_text}</div>'
-                f'<div class="metric-sub">Threshold: {threshold:.2f}</div></div>', unsafe_allow_html=True)
+                f'<div class="metric-sub">Clinical Classification</div></div>', unsafe_allow_html=True)
         with m3:
             st.markdown(
                 f'<div class="metric-card"><div class="metric-label">Key Driver</div>'
@@ -522,9 +664,6 @@ with tab1:
                 f'<div class="metric-sub">-{impact_val:.1f}% if improved 10%</div></div>', unsafe_allow_html=True)
 
         st.markdown('<div class="section-title">AI Clinical Interpretation</div>', unsafe_allow_html=True)
-        # Cached — only calls Mistral when risk level or key inputs change
-        explanation = get_clinical_narrative(
-            round(risk_prob * 100, 1), status_text, glucose, round(bmi, 1), age, best_feat)
         st.markdown(f'<div class="insight-box">{explanation}</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="section-title">Biological Metrics vs Clinical Targets</div>', unsafe_allow_html=True)
@@ -589,20 +728,24 @@ with tab1:
 
         st.markdown('<div class="aura-divider"></div>', unsafe_allow_html=True)
         if st.button('Generate Clinical PDF Report'):
-            with st.spinner('Compiling...'):
-                pdf_bytes = generate_pdf(risk_prob, status_text, raw_input, best_feat, g_risk,
-                                         st.session_state.get('messages', []))
+            with st.spinner('Compiling report...'):
+                pdf_bytes = generate_pdf(
+                    risk_prob, status_text, raw_input, best_feat, impact_val,
+                    g_risk, g_gluc, g_bmi, g_bp,
+                    explanation,
+                    st.session_state.get('messages', [])
+                )
             if pdf_bytes:
                 st.download_button('Download PDF', data=pdf_bytes,
                     file_name='SelectedTopics_Clinical_Report.pdf', mime='application/pdf')
             else:
-                st.warning('Install fpdf: pip install fpdf')
+                st.warning('PDF generation failed. Ensure fpdf is installed.')
 
 # ── TAB 2 — Deep Analytics ────────────────────────────────────────────────────
 with tab2:
     col_a, col_b = st.columns(2, gap='large')
     with col_a:
-        st.markdown('<div class="section-title">Feature Importance — NeuralNetFastAI</div>',
+        st.markdown('<div class="section-title">Feature Importance</div>',
                     unsafe_allow_html=True)
         fi_names = list(STATIC_FI.keys())
         fi_vals  = list(STATIC_FI.values())
@@ -613,7 +756,7 @@ with tab2:
             text=[f'{v:.2f}' for v in fi_vals], textposition='outside',
             textfont=dict(family='Space Mono', size=9, color='#94a3b8')))
         fi_fig.update_layout(**PLOTLY_BASE,
-            title=dict(text='Feature Importance (NeuralNetFastAI)', font=dict(color='#e2e8f0', size=13)),
+            title=dict(text='Feature Importance Scores', font=dict(color='#e2e8f0', size=13)),
             xaxis=dict(title='Importance Score', **GRID_X),
             yaxis=dict(**GRID_Y), height=380)
         st.plotly_chart(fi_fig, width='stretch', config={'displayModeBar': False}, key='chart_4')
@@ -649,12 +792,11 @@ with tab2:
             yaxis=dict(title='Contribution (%)', **GRID_Y), height=280)
         st.plotly_chart(contrib_fig, width='stretch', config={'displayModeBar': False}, key='chart_7')
 
-        st.markdown('<div class="section-title">AutoGluon Model Details</div>',
+        st.markdown('<div class="section-title">Clinical Intelligence Summary</div>',
                     unsafe_allow_html=True)
         st.markdown(
             f'<div class="insight-box">'
             f'<b>Framework:</b> AutoGluon TabularPredictor<br>'
-            f'<b>Best Model:</b> {DISPLAY_MODEL}<br>'
             f'<b>Preset:</b> best_quality &nbsp;|&nbsp; <b>Time Limit:</b> 600s<br>'
             f'<b>Eval Metric:</b> Recall — prioritises clinical sensitivity<br>'
             f'<b>Zero Imputation:</b> Impossible zeros → NaN (AutoGluon handles internally)<br>'
@@ -682,8 +824,6 @@ with tab3:
         f'You are a clinical health coach in Doha Qatar. '
         f'Patient: Age {age}y BMI {bmi} Glucose {glucose}mg/dL '
         f'Risk {risk_prob:.1%} ({status_text}). '
-        f'Model: AutoGluon best_quality — {DISPLAY_MODEL} — '
-        f'Threshold: {threshold:.2f}. '
         f'Priority intervention: {best_feat}. '
         f'Be professional, suggest Doha venues. No emojis.'
     )
