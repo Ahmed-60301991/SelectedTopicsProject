@@ -599,12 +599,6 @@ with st.sidebar:
     age     = st.slider('Age (years)', 21, 81, 33)
     st.markdown("<div class='aura-divider'></div>", unsafe_allow_html=True)
     st.markdown(f"""<div style='font-family:Space Mono,monospace;font-size:0.68rem;color:#64748b;line-height:1.9;'>
-        <div style='color:#94a3b8;font-weight:700;margin-bottom:6px;letter-spacing:0.1em;'>RISK SUMMARY</div>
-        <div>Test AUC: <span style='color:#fca5a5;'>{meta.get('test_auc', 0):.4f}</span></div>
-        <div>Test F1: <span style='color:#fca5a5;'>{meta.get('test_f1', 0):.4f}</span></div>
-        <div>Test Recall: <span style='color:#fca5a5;'>{meta.get('test_recall', 0):.4f}</span></div>
-    </div>""", unsafe_allow_html=True)
-    st.markdown("<div class='ag-badge'>⚡ AutoGluon Active</div>", unsafe_allow_html=True)
 
 # ── PREDICT ───────────────────────────────────────────────────────────────────
 raw_input = dict(
@@ -792,17 +786,6 @@ with tab2:
             yaxis=dict(title='Contribution (%)', **GRID_Y), height=280)
         st.plotly_chart(contrib_fig, width='stretch', config={'displayModeBar': False}, key='chart_7')
 
-        st.markdown('<div class="section-title">Clinical Intelligence Summary</div>',
-                    unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="insight-box">'
-            f'<b>Framework:</b> AutoGluon TabularPredictor<br>'
-            f'<b>Preset:</b> best_quality &nbsp;|&nbsp; <b>Time Limit:</b> 600s<br>'
-            f'<b>Eval Metric:</b> Recall — prioritises clinical sensitivity<br>'
-            f'<b>Zero Imputation:</b> Impossible zeros → NaN (AutoGluon handles internally)<br>'
-            f"<b>Test AUC-ROC:</b> {meta.get('test_auc', 0):.4f} &nbsp;|&nbsp;"
-            f"<b>Test Recall:</b> {meta.get('test_recall', 0):.4f}"
-            f'</div>', unsafe_allow_html=True)
 
 # ── TAB 3 — AI Health Coach ───────────────────────────────────────────────────
 with tab3:
