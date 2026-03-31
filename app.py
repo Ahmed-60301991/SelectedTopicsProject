@@ -233,37 +233,41 @@ def risk_level(prob: float):
 
 # ── PDF GENERATION ────────────────────────────────────────────────────────────
 def generate_pdf(risk_prob, status_text, raw_input, best_feat, impact_val,
-                 g_risk, g_gluc, g_bmi, g_bp, explanation, chat_history):
+                  g_risk, g_gluc, g_bmi, g_bp, explanation, chat_history):
     try:
         from fpdf import FPDF
         from datetime import datetime
 
+        # 1. Helper to prevent PDF crashes on special characters (em-dashes, etc.)
         def safe(txt):
-            """Strip non-latin characters so fpdf doesn't crash."""
-            return txt.encode('latin-1', errors='replace').decode('latin-1')
+            if not txt: return ""
+            # Replaces special LLM characters with standard versions
+            txt = txt.replace('\u2014', '-').replace('\u2013', '-').replace('\u2019', "'")
+            return txt.encode('latin-1', 'replace').decode('latin-1')
 
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
 
         # ── PAGE 1: Clinical Summary ──────────────────────────────────────────
         pdf.add_page()
-        pdf.set_fill_color(100, 0, 20)
+        pdf.set_fill_color(100, 0, 20) # Aura Dark Red
         pdf.rect(0, 0, 210, 38, 'F')
+        
         pdf.set_font('Arial', 'B', 20)
         pdf.set_text_color(255, 255, 255)
         pdf.set_y(7)
-        pdf.cell(0, 10, 'SELECTED TOPICS PROJECT', ln=True, align='C')
+        pdf.cell(0, 10, 'AURA AI - CLINICAL INTELLIGENCE', ln=True, align='C')
+        
         pdf.set_font('Arial', 'B', 13)
         pdf.set_text_color(220, 180, 180)
         pdf.cell(0, 7, 'Diabetes Clinical Risk Assessment Report', ln=True, align='C')
+        
         pdf.set_font('Arial', '', 9)
-        pdf.set_text_color(200, 160, 160)
-        pdf.cell(0, 5, f"Generated: {datetime.now().strftime('%B %d, %Y at %H:%M')}",
-                 ln=True, align='C')
+        pdf.cell(0, 5, f"Generated: {datetime.now().strftime('%B %d, %Y at %H:%M')}", ln=True, align='C')
 
         pdf.set_y(46)
 
-        def section(title):
+        def section_header(title):
             pdf.set_font('Arial', 'B', 12)
             pdf.set_text_color(150, 0, 30)
             pdf.cell(0, 7, title, ln=True)
@@ -272,170 +276,52 @@ def generate_pdf(risk_prob, status_text, raw_input, best_feat, impact_val,
             pdf.line(10, pdf.get_y(), 200, pdf.get_y())
             pdf.ln(3)
 
-        def row(label, value, label_w=70):
-            pdf.set_font('Arial', '', 10)
-            pdf.set_text_color(80, 80, 80)
-            pdf.cell(label_w, 7, label + ':', ln=False)
-            pdf.set_text_color(0, 0, 0)
-            pdf.set_font('Arial', 'B', 10)
-            pdf.cell(0, 7, safe(str(value)), ln=True)
-
-        # Risk summary box
-        r_label, _ = risk_level(risk_prob)
+        # Risk Score Box
         pdf.set_fill_color(245, 235, 235)
         pdf.set_draw_color(150, 0, 30)
-        pdf.set_line_width(0.5)
-        pdf.rect(10, pdf.get_y(), 190, 22, 'FD')
+        pdf.rect(10, pdf.get_y(), 190, 25, 'FD')
+        
         pdf.set_font('Arial', 'B', 14)
         pdf.set_text_color(100, 0, 20)
-        pdf.set_x(10)
-        pdf.cell(95, 11, f'Risk Score:  {risk_prob:.1%}', ln=False, align='C')
-        pdf.cell(95, 11, f'Diagnosis:  {status_text}', ln=True, align='C')
+        pdf.set_y(pdf.get_y() + 2)
+        pdf.cell(95, 10, f'Risk Score: {risk_prob:.1%}', ln=False, align='C')
+        pdf.cell(95, 10, f'Status: {status_text}', ln=True, align='C')
+        
         pdf.set_font('Arial', '', 10)
         pdf.set_text_color(80, 80, 80)
-        pdf.set_x(10)
-        pdf.cell(190, 11, f'Priority Intervention:  {best_feat}  —  10% improvement reduces risk by {impact_val:.1f} pp', ln=True, align='C')
-        pdf.ln(5)
-
-        # AI Interpretation
-        section('AI Clinical Interpretation')
-        pdf.set_font('Arial', 'I', 10)
-        pdf.set_text_color(40, 40, 40)
-        pdf.multi_cell(0, 6, safe(explanation))
-        pdf.ln(3)
-
-        # Patient bio-data
-        section('Patient Bio-Data')
-        fields = [
-            ('Pregnancies',          raw_input['Pregnancies']),
-            ('Glucose (mg/dL)',       raw_input['Glucose']),
-            ('Blood Pressure (mmHg)', raw_input['BloodPressure']),
-            ('Skin Thickness (mm)',   raw_input['SkinThickness']),
-            ('Insulin (uU/mL)',       raw_input['Insulin']),
-            ('BMI (kg/m²)',           f"{raw_input['BMI']:.1f}"),
-            ('Diabetes Pedigree',     f"{raw_input['DiabetesPedigreeFunction']:.2f}"),
-            ('Age (years)',           raw_input['Age']),
-        ]
-        for i in range(0, len(fields), 2):
-            pdf.set_font('Arial', '', 10)
-            pdf.set_text_color(80, 80, 80)
-            pdf.cell(25, 7, fields[i][0] + ':', ln=False)
-            pdf.set_text_color(0, 0, 0)
-            pdf.set_font('Arial', 'B', 10)
-            pdf.cell(65, 7, str(fields[i][1]), ln=False)
-            if i + 1 < len(fields):
-                pdf.set_font('Arial', '', 10)
-                pdf.set_text_color(80, 80, 80)
-                pdf.cell(30, 7, fields[i+1][0] + ':', ln=False)
-                pdf.set_text_color(0, 0, 0)
-                pdf.set_font('Arial', 'B', 10)
-                pdf.cell(0, 7, str(fields[i+1][1]), ln=True)
-            else:
-                pdf.ln()
-        pdf.ln(3)
-
-        # Clinical targets
-        section('Biological Metrics vs Clinical Targets')
-        headers = ['Metric', 'Patient Value', 'Target', 'Status']
-        col_w   = [55, 45, 45, 40]
-        pdf.set_font('Arial', 'B', 9)
-        pdf.set_fill_color(100, 0, 20)
-        pdf.set_text_color(255, 255, 255)
-        for h, w in zip(headers, col_w):
-            pdf.cell(w, 7, h, border=1, fill=True)
-        pdf.ln()
-        bio_rows = [
-            ('Glucose',        f"{raw_input['Glucose']} mg/dL",          '< 100 mg/dL',   'OK' if raw_input['Glucose'] < 100   else 'HIGH'),
-            ('BMI',            f"{raw_input['BMI']:.1f} kg/m2",           '18.5 - 24.9',   'OK' if 18.5 <= raw_input['BMI'] <= 24.9 else 'HIGH'),
-            ('Blood Pressure', f"{raw_input['BloodPressure']} mmHg",      '< 80 mmHg',     'OK' if raw_input['BloodPressure'] < 80  else 'HIGH'),
-            ('Insulin',        f"{raw_input['Insulin']} uU/mL",           '< 166 uU/mL',   'OK' if raw_input['Insulin'] < 166   else 'HIGH'),
-        ]
-        for m, v, t, s in bio_rows:
-            pdf.set_font('Arial', '', 9)
-            pdf.set_text_color(0, 0, 0)
-            pdf.set_fill_color(248, 248, 248)
-            pdf.cell(col_w[0], 6, m, border=1, fill=True)
-            pdf.cell(col_w[1], 6, v, border=1)
-            pdf.cell(col_w[2], 6, t, border=1)
-            pdf.set_font('Arial', 'B', 9)
-            pdf.set_text_color(0, 140, 0) if s == 'OK' else pdf.set_text_color(200, 0, 0)
-            pdf.cell(col_w[3], 6, s, border=1)
-            pdf.ln()
-        pdf.ln(4)
-
-        # Goal simulation
-        section('Goal Simulation Results')
-        row('Target Glucose',       f'{g_gluc} mg/dL')
-        row('Target BMI',           f'{g_bmi:.1f} kg/m2')
-        row('Target Blood Pressure',f'{g_bp} mmHg')
-        delta = g_risk - risk_prob
-        direction = 'decrease' if delta < 0 else 'increase'
-        row('Simulated Risk Score',  f'{g_risk:.1%}  ({direction} of {abs(delta):.1%})')
-        pdf.ln(2)
-
-        # Intervention impact
-        section('Intervention Impact Analysis (10% Improvement per Feature)')
-        headers2 = ['Feature', 'Risk Reduction (pp)']
-        col_w2   = [100, 85]
-        pdf.set_font('Arial', 'B', 9)
-        pdf.set_fill_color(100, 0, 20)
-        pdf.set_text_color(255, 255, 255)
-        for h, w in zip(headers2, col_w2):
-            pdf.cell(w, 7, h, border=1, fill=True)
-        pdf.ln()
-        # We just show the impact_val for best_feat; others not passed but we can show best
-        pdf.set_font('Arial', '', 9)
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_fill_color(255, 240, 240)
-        pdf.cell(col_w2[0], 6, f'{best_feat} (Priority)', border=1, fill=True)
-        pdf.set_font('Arial', 'B', 9)
-        pdf.cell(col_w2[1], 6, f'-{impact_val:.2f} pp', border=1)
+        pdf.cell(190, 8, safe(f'Priority: {best_feat} (Potential Impact: -{impact_val:.1f}%)'), ln=True, align='C')
         pdf.ln(8)
 
-        # ── PAGE 2: AI Health Coach Transcript ───────────────────────────────
-        if chat_history:
-            pdf.add_page()
-            pdf.set_fill_color(100, 0, 20)
-            pdf.rect(0, 0, 210, 20, 'F')
-            pdf.set_font('Arial', 'B', 14)
-            pdf.set_text_color(255, 255, 255)
-            pdf.set_y(5)
-            pdf.cell(0, 10, 'AI Health Coach Conversation Transcript', ln=True, align='C')
-            pdf.set_y(28)
+        # ── AI Interpretation (The Mistral Narratve) ──────────────────────────
+        section_header('AI Clinical Interpretation')
+        pdf.set_font('Arial', 'I', 10)
+        pdf.set_text_color(40, 40, 40)
+        # Using the safe() helper here is CRITICAL
+        pdf.multi_cell(0, 7, txt=safe(explanation))
+        pdf.ln(5)
 
-            for msg in chat_history:
-                role = msg.get('role', '')
-                content = safe(msg.get('content', ''))
-                if role == 'user':
-                    pdf.set_fill_color(230, 240, 255)
-                    pdf.set_text_color(0, 50, 120)
-                    pdf.set_font('Arial', 'B', 9)
-                    label = 'You'
-                else:
-                    pdf.set_fill_color(240, 255, 240)
-                    pdf.set_text_color(0, 80, 0)
-                    pdf.set_font('Arial', 'B', 9)
-                    label = 'AI Coach'
-
-                # Label bar
-                pdf.set_x(10)
-                pdf.cell(190, 5, label, ln=True, fill=True)
-                # Message body
-                pdf.set_font('Arial', '', 9)
-                pdf.set_text_color(30, 30, 30)
-                pdf.set_x(14)
-                pdf.multi_cell(183, 5, content)
-                pdf.ln(2)
-
-        # Footer on all pages
-        pdf.set_y(-12)
-        pdf.set_font('Arial', 'I', 7)
-        pdf.set_text_color(150, 150, 150)
-        pdf.cell(0, 5, 'Selected Topics Project (DSAI4201) — For educational purposes only. Not a medical diagnosis.',
-                 align='C')
+        # ── Patient Metrics ───────────────────────────────────────────────────
+        section_header('Patient Bio-Data')
+        pdf.set_font('Arial', '', 10)
+        pdf.set_text_color(0, 0, 0)
+        
+        col_width = 45
+        for i, (k, v) in enumerate(raw_input.items()):
+            pdf.cell(col_width, 8, f"{k}: {v}", border=0)
+            if (i + 1) % 4 == 0: pdf.ln()
+            
+        pdf.ln(10)
+        
+        # ── Simulated Goals ───────────────────────────────────────────────────
+        section_header('Interactive Simulation Goals')
+        pdf.cell(60, 8, f"Target Glucose: {g_gluc} mg/dL")
+        pdf.cell(60, 8, f"Target BMI: {g_bmi}")
+        pdf.cell(60, 8, f"Target BP: {g_bp}")
+        pdf.ln()
+        pdf.set_font('Arial', 'B', 10)
+        pdf.cell(0, 8, f"Projected Risk following interventions: {g_risk:.1%}")
 
         return pdf.output(dest='S').encode('latin-1')
-
     except Exception as e:
         st.error(f"PDF Error: {e}")
         return None
