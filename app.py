@@ -233,19 +233,14 @@ def risk_level(prob: float):
 
 # ── PDF GENERATION ────────────────────────────────────────────────────────────
 def generate_pdf(risk_prob, status_text, raw_input, best_feat, impact_val,
-                  g_risk, g_gluc, g_bmi, g_bp, explanation, chat_history):
+                 g_risk, g_gluc, g_bmi, g_bp, explanation, chat_history):
     try:
         from fpdf import FPDF
         from datetime import datetime
 
-        # This helper is now defined inside the function for maximum safety
         def safe(txt):
             """Strip non-latin characters so fpdf doesn't crash."""
-            if not txt:
-                return ""
-            # Replace the tricky em-dash manually just in case
-            txt = txt.replace('\u2014', '-').replace('\u2013', '-')
-            return txt.encode('latin-1', 'replace').decode('latin-1')
+            return txt.encode('latin-1', errors='replace').decode('latin-1')
 
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
@@ -257,11 +252,10 @@ def generate_pdf(risk_prob, status_text, raw_input, best_feat, impact_val,
         pdf.set_font('Arial', 'B', 20)
         pdf.set_text_color(255, 255, 255)
         pdf.set_y(7)
-        pdf.cell(0, 10, 'AURA AI - CLINICAL INTELLIGENCE', ln=True, align='C')
+        pdf.cell(0, 10, 'SELECTED TOPICS PROJECT', ln=True, align='C')
         pdf.set_font('Arial', 'B', 13)
         pdf.set_text_color(220, 180, 180)
         pdf.cell(0, 7, 'Diabetes Clinical Risk Assessment Report', ln=True, align='C')
-        
         pdf.set_font('Arial', '', 9)
         pdf.set_text_color(200, 160, 160)
         pdf.cell(0, 5, f"Generated: {datetime.now().strftime('%B %d, %Y at %H:%M')}",
@@ -278,36 +272,67 @@ def generate_pdf(risk_prob, status_text, raw_input, best_feat, impact_val,
             pdf.line(10, pdf.get_y(), 200, pdf.get_y())
             pdf.ln(3)
 
+        def row(label, value, label_w=70):
+            pdf.set_font('Arial', '', 10)
+            pdf.set_text_color(80, 80, 80)
+            pdf.cell(label_w, 7, label + ':', ln=False)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font('Arial', 'B', 10)
+            pdf.cell(0, 7, safe(str(value)), ln=True)
+
         # Risk summary box
+        r_label, _ = risk_level(risk_prob)
         pdf.set_fill_color(245, 235, 235)
         pdf.set_draw_color(150, 0, 30)
         pdf.set_line_width(0.5)
         pdf.rect(10, pdf.get_y(), 190, 22, 'FD')
-        
         pdf.set_font('Arial', 'B', 14)
         pdf.set_text_color(100, 0, 20)
         pdf.set_x(10)
         pdf.cell(95, 11, f'Risk Score:  {risk_prob:.1%}', ln=False, align='C')
         pdf.cell(95, 11, f'Diagnosis:  {status_text}', ln=True, align='C')
-        
         pdf.set_font('Arial', '', 10)
         pdf.set_text_color(80, 80, 80)
         pdf.set_x(10)
-        # FIXED: Replaced the '—' character here with a standard '-'
-        pdf.cell(190, 11, safe(f'Priority Intervention: {best_feat} - 10% improvement reduces risk by {impact_val:.1f}pp'), ln=True, align='C')
+        pdf.cell(190, 11, f'Priority Intervention:  {best_feat}  —  10% improvement reduces risk by {impact_val:.1f} pp', ln=True, align='C')
         pdf.ln(5)
 
         # AI Interpretation
         section('AI Clinical Interpretation')
         pdf.set_font('Arial', 'I', 10)
         pdf.set_text_color(40, 40, 40)
-        
-        safe_explanation = safe(explanation)
-        pdf.multi_cell(0, 7, txt=safe_explanation)
+        pdf.multi_cell(0, 6, safe(explanation))
         pdf.ln(3)
 
         # Patient bio-data
         section('Patient Bio-Data')
+        fields = [
+            ('Pregnancies',          raw_input['Pregnancies']),
+            ('Glucose (mg/dL)',       raw_input['Glucose']),
+            ('Blood Pressure (mmHg)', raw_input['BloodPressure']),
+            ('Skin Thickness (mm)',   raw_input['SkinThickness']),
+            ('Insulin (uU/mL)',       raw_input['Insulin']),
+            ('BMI (kg/m²)',           f"{raw_input['BMI']:.1f}"),
+            ('Diabetes Pedigree',     f"{raw_input['DiabetesPedigreeFunction']:.2f}"),
+            ('Age (years)',           raw_input['Age']),
+        ]
+        for i in range(0, len(fields), 2):
+            pdf.set_font('Arial', '', 10)
+            pdf.set_text_color(80, 80, 80)
+            pdf.cell(25, 7, fields[i][0] + ':', ln=False)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font('Arial', 'B', 10)
+            pdf.cell(65, 7, str(fields[i][1]), ln=False)
+            if i + 1 < len(fields):
+                pdf.set_font('Arial', '', 10)
+                pdf.set_text_color(80, 80, 80)
+                pdf.cell(30, 7, fields[i+1][0] + ':', ln=False)
+                pdf.set_text_color(0, 0, 0)
+                pdf.set_font('Arial', 'B', 10)
+                pdf.cell(0, 7, str(fields[i+1][1]), ln=True)
+            else:
+                pdf.ln()
+        pdf.ln(3)
 
         # Clinical targets
         section('Biological Metrics vs Clinical Targets')
@@ -414,26 +439,6 @@ def generate_pdf(risk_prob, status_text, raw_input, best_feat, impact_val,
     except Exception as e:
         st.error(f"PDF Error: {e}")
         return None
-
-def clean_for_pdf(text):
-    """Replaces non-Latin-1 characters with PDF-safe alternatives."""
-    if not text:
-        return ""
-    # Map common problematic characters to safe ones
-    replacements = {
-        '\u2014': '-',  # Em Dash
-        '\u2013': '-',  # En Dash
-        '\u201c': '"',  # Smart Left Quote
-        '\u201d': '"',  # Smart Right Quote
-        '\u2018': "'",  # Smart Left Single Quote
-        '\u2019': "'",  # Smart Right Single Quote
-        '\u2022': '*',  # Bullet point
-    }
-    for search, replace in replacements.items():
-        text = text.replace(search, replace)
-    
-    # Final safety: encode to latin-1 and ignore anything else that remains
-    return text.encode('latin-1', 'ignore').decode('latin-1')
 
 
 # ── CHARTS ────────────────────────────────────────────────────────────────────
@@ -593,6 +598,13 @@ with st.sidebar:
     dpf     = st.slider('Diabetes Pedigree', 0.0, 2.42, 0.47, step=0.01)
     age     = st.slider('Age (years)', 21, 81, 33)
     st.markdown("<div class='aura-divider'></div>", unsafe_allow_html=True)
+    st.markdown(f"""<div style='font-family:Space Mono,monospace;font-size:0.68rem;color:#64748b;line-height:1.9;'>
+        <div style='color:#94a3b8;font-weight:700;margin-bottom:6px;letter-spacing:0.1em;'>RISK SUMMARY</div>
+        <div>Test AUC: <span style='color:#fca5a5;'>{meta.get('test_auc', 0):.4f}</span></div>
+        <div>Test F1: <span style='color:#fca5a5;'>{meta.get('test_f1', 0):.4f}</span></div>
+        <div>Test Recall: <span style='color:#fca5a5;'>{meta.get('test_recall', 0):.4f}</span></div>
+    </div>""", unsafe_allow_html=True)
+    st.markdown("<div class='ag-badge'>⚡ AutoGluon Active</div>", unsafe_allow_html=True)
 
 # ── PREDICT ───────────────────────────────────────────────────────────────────
 raw_input = dict(
