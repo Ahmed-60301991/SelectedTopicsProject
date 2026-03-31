@@ -239,11 +239,10 @@ def generate_pdf(risk_prob, status_text, raw_input, best_feat, impact_val,
 
         def safe(txt):
             if not txt: return ""
-            # Handle common LLM special characters that crash FPDF
+            # Fixes special characters that crash FPDF
             replacements = {
                 '\u2014': '-', '\u2013': '-', '\u2019': "'", 
-                '\u2018': "'", '\u201d': '"', '\u201c': '"', 
-                '\u2022': '*', # Bullet points
+                '\u2018': "'", '\u201d': '"', '\u201c': '"', '\u2022': '*'
             }
             for code, char in replacements.items():
                 txt = txt.replace(code, char)
@@ -252,52 +251,97 @@ def generate_pdf(risk_prob, status_text, raw_input, best_feat, impact_val,
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
 
-        # --- PAGE 1: CLINICAL SUMMARY (Your existing logic) ---
+        # ── PAGE 1: CLINICAL SUMMARY ──────────────────────────────────────────
         pdf.add_page()
+        
+        # Header Background
         pdf.set_fill_color(100, 0, 20) 
         pdf.rect(0, 0, 210, 38, 'F')
-        pdf.set_font('Arial', 'B', 20); pdf.set_text_color(255, 255, 255)
-        pdf.set_y(7); pdf.cell(0, 10, 'AURA AI - CLINICAL INTELLIGENCE', ln=True, align='C')
-        pdf.set_font('Arial', 'B', 13); pdf.set_text_color(220, 180, 180)
+        
+        pdf.set_font('Arial', 'B', 20)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_y(7)
+        pdf.cell(0, 10, 'AURA AI - CLINICAL INTELLIGENCE', ln=True, align='C')
+        
+        pdf.set_font('Arial', 'B', 13)
+        pdf.set_text_color(220, 180, 180)
         pdf.cell(0, 7, 'Diabetes Clinical Risk Assessment Report', ln=True, align='C')
+        
+        pdf.set_font('Arial', '', 9)
+        pdf.cell(0, 5, f"Generated: {datetime.now().strftime('%B %d, %Y at %H:%M')}", ln=True, align='C')
+
         pdf.set_y(46)
 
         def section_header(title):
-            pdf.set_font('Arial', 'B', 12); pdf.set_text_color(150, 0, 30)
+            pdf.set_font('Arial', 'B', 12)
+            pdf.set_text_color(150, 0, 30)
             pdf.cell(0, 7, title, ln=True)
-            pdf.set_draw_color(150, 0, 30); pdf.set_line_width(0.4)
-            pdf.line(10, pdf.get_y(), 200, pdf.get_y()); pdf.ln(3)
+            pdf.set_draw_color(150, 0, 30)
+            pdf.set_line_width(0.4)
+            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+            pdf.ln(3)
 
-        # (Existing Risk Score Box & Explanation code goes here...)
+        # Risk Score Box
+        pdf.set_fill_color(245, 235, 235)
+        pdf.set_draw_color(150, 0, 30)
+        pdf.rect(10, pdf.get_y(), 190, 25, 'FD')
+        
+        pdf.set_font('Arial', 'B', 14)
+        pdf.set_text_color(100, 0, 20)
+        pdf.set_y(pdf.get_y() + 2)
+        pdf.cell(95, 10, f'Risk Score: {risk_prob:.1%}', ln=False, align='C')
+        pdf.cell(95, 10, f'Status: {status_text}', ln=True, align='C')
+        
+        pdf.set_font('Arial', '', 10)
+        pdf.set_text_color(80, 80, 80)
+        pdf.cell(190, 8, safe(f'Priority: {best_feat} (Potential Impact: -{impact_val:.1f}%)'), ln=True, align='C')
+        pdf.ln(8)
+
+        # AI Interpretation
         section_header('AI Clinical Interpretation')
-        pdf.set_font('Arial', 'I', 10); pdf.set_text_color(40, 40, 40)
+        pdf.set_font('Arial', 'I', 10)
+        pdf.set_text_color(40, 40, 40)
         pdf.multi_cell(0, 7, txt=safe(explanation))
         pdf.ln(5)
 
-        # --- PAGE 2: CHATBOT HISTORY ---
-        # Only add this page if there is actual history to show
+        # Patient Metrics
+        section_header('Patient Bio-Data')
+        pdf.set_font('Arial', '', 10)
+        pdf.set_text_color(0, 0, 0)
+        
+        col_width = 45
+        for i, (k, v) in enumerate(raw_input.items()):
+            pdf.cell(col_width, 8, f"{k}: {v}", border=0)
+            if (i + 1) % 4 == 0: pdf.ln()
+            
+        pdf.ln(10)
+        
+        # Simulation Goals
+        section_header('Interactive Simulation Goals')
+        pdf.cell(60, 8, f"Target Glucose: {g_gluc} mg/dL")
+        pdf.cell(60, 8, f"Target BMI: {g_bmi}")
+        pdf.cell(60, 8, f"Target BP: {g_bp}")
+        pdf.ln()
+        pdf.set_font('Arial', 'B', 10)
+        pdf.cell(0, 8, f"Projected Risk following interventions: {g_risk:.1%}")
+
+        # ── PAGE 2: CHATBOT HISTORY ───────────────────────────────────────────
         if chat_history and len(chat_history) > 0:
-            pdf.add_page()
+            pdf.add_page() # This creates the new page for the chat
             section_header('AI Health Coach - Consultation Logs')
             
             for msg in chat_history:
                 role = msg["role"].upper()
                 content = msg["content"]
                 
-                # Format Header for message (USER or ASSISTANT)
                 pdf.set_font('Arial', 'B', 9)
-                if role == "USER":
-                    pdf.set_text_color(100, 100, 100)
-                else:
-                    pdf.set_text_color(150, 0, 30) # AI text in Aura Red
-                
+                pdf.set_text_color(150, 0, 30) if role != "USER" else pdf.set_text_color(100, 100, 100)
                 pdf.cell(0, 6, f"{role}:", ln=True)
                 
-                # Format Message Body
                 pdf.set_font('Arial', '', 10)
                 pdf.set_text_color(30, 30, 30)
                 pdf.multi_cell(0, 6, txt=safe(content))
-                pdf.ln(4) # Space between messages
+                pdf.ln(4)
 
         return pdf.output(dest='S').encode('latin-1')
     except Exception as e:
