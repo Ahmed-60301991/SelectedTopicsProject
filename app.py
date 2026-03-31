@@ -698,18 +698,6 @@ with tab2:
             yaxis=dict(title='Contribution (%)', **GRID_Y), height=280)
         st.plotly_chart(contrib_fig, width='stretch', config={'displayModeBar': False}, key='chart_7')
 
-        st.markdown('<div class="section-title">Clinical Intelligence Summary</div>',
-                    unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="insight-box">'
-            f'<b>Framework:</b> AutoGluon TabularPredictor<br>'
-            f'<b>Preset:</b> best_quality &nbsp;|&nbsp; <b>Time Limit:</b> 600s<br>'
-            f'<b>Eval Metric:</b> Recall — prioritises clinical sensitivity<br>'
-            f'<b>Zero Imputation:</b> Impossible zeros → NaN (AutoGluon handles internally)<br>'
-            f"<b>Test AUC-ROC:</b> {meta.get('test_auc', 0):.4f} &nbsp;|&nbsp;"
-            f"<b>Test Recall:</b> {meta.get('test_recall', 0):.4f}"
-            f'</div>', unsafe_allow_html=True)
-
 # ── TAB 3 — AI Health Coach ───────────────────────────────────────────────────
 with tab3:
     st.markdown("""<div style='margin-bottom:16px;'>
