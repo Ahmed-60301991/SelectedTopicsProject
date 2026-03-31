@@ -301,7 +301,9 @@ def generate_pdf(risk_prob, status_text, raw_input, best_feat, impact_val,
         section('AI Clinical Interpretation')
         pdf.set_font('Arial', 'I', 10)
         pdf.set_text_color(40, 40, 40)
-        pdf.multi_cell(0, 6, safe(explanation))
+        # New way - Safe for PDF export
+        safe_response = clean_for_pdf(response)
+        pdf.multi_cell(0, 10, txt=f"AI Advice: {safe_response}")
         pdf.ln(3)
 
         # Patient bio-data
@@ -439,6 +441,26 @@ def generate_pdf(risk_prob, status_text, raw_input, best_feat, impact_val,
     except Exception as e:
         st.error(f"PDF Error: {e}")
         return None
+
+def clean_for_pdf(text):
+    """Replaces non-Latin-1 characters with PDF-safe alternatives."""
+    if not text:
+        return ""
+    # Map common problematic characters to safe ones
+    replacements = {
+        '\u2014': '-',  # Em Dash
+        '\u2013': '-',  # En Dash
+        '\u201c': '"',  # Smart Left Quote
+        '\u201d': '"',  # Smart Right Quote
+        '\u2018': "'",  # Smart Left Single Quote
+        '\u2019': "'",  # Smart Right Single Quote
+        '\u2022': '*',  # Bullet point
+    }
+    for search, replace in replacements.items():
+        text = text.replace(search, replace)
+    
+    # Final safety: encode to latin-1 and ignore anything else that remains
+    return text.encode('latin-1', 'ignore').decode('latin-1')
 
 
 # ── CHARTS ────────────────────────────────────────────────────────────────────
