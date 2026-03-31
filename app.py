@@ -598,13 +598,6 @@ with st.sidebar:
     dpf     = st.slider('Diabetes Pedigree', 0.0, 2.42, 0.47, step=0.01)
     age     = st.slider('Age (years)', 21, 81, 33)
     st.markdown("<div class='aura-divider'></div>", unsafe_allow_html=True)
-    st.markdown(f"""<div style='font-family:Space Mono,monospace;font-size:0.68rem;color:#64748b;line-height:1.9;'>
-        <div style='color:#94a3b8;font-weight:700;margin-bottom:6px;letter-spacing:0.1em;'>RISK SUMMARY</div>
-        <div>Test AUC: <span style='color:#fca5a5;'>{meta.get('test_auc', 0):.4f}</span></div>
-        <div>Test F1: <span style='color:#fca5a5;'>{meta.get('test_f1', 0):.4f}</span></div>
-        <div>Test Recall: <span style='color:#fca5a5;'>{meta.get('test_recall', 0):.4f}</span></div>
-    </div>""", unsafe_allow_html=True)
-    st.markdown("<div class='ag-badge'>⚡ AutoGluon Active</div>", unsafe_allow_html=True)
 
 # ── PREDICT ───────────────────────────────────────────────────────────────────
 raw_input = dict(
