@@ -596,9 +596,10 @@ with tab1:
             f' <b>{impact_val:.1f} percentage points</b>.</div></div>', unsafe_allow_html=True)
 
         st.markdown('<div class="section-title">Interactive Goal Simulation</div>', unsafe_allow_html=True)
-        g_bmi  = st.number_input('Target BMI', 15.0, 50.0, float(bmi), step=0.5, key='g_bmi')
-        g_gluc = st.number_input('Target Glucose (mg/dL)', 60, 250, int(glucose), step=5, key='g_gluc')
-        g_bp   = st.number_input('Target Blood Pressure', 40, 130, int(bp), step=2, key='g_bp')
+        
+        g_bmi  = st.number_input('Target BMI', 15.0, 50.0, max(15.0, float(bmi)), step=0.5, key='g_bmi')
+        g_gluc = st.number_input('Target Glucose (mg/dL)', 60, 250, max(60, int(glucose)), step=5, key='g_gluc')
+        g_bp   = st.number_input('Target Blood Pressure', 40, 130, max(40, int(bp)), step=2, key='g_bp')
         g_risk = predict_proba(preg, g_gluc, g_bp, skin, insulin, g_bmi, dpf, age)
         delta  = g_risk - risk_prob
         g_label, g_color = risk_level(g_risk)
