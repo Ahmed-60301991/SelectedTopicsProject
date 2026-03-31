@@ -791,7 +791,7 @@ with tab2:
 # ── TAB 3 — AI Health Coach ───────────────────────────────────────────────────
 with tab3:
     st.markdown("""<div style='margin-bottom:16px;'>
-        <div class='section-title'>AI Health Coach — Powered by Mistral AI</div>
+        <div class='section-title'>AI Health Coach - Powered by Mistral AI</div>
         <p style='font-size:0.82rem;color:#64748b;margin:0;'>
         Ask about health metrics, diabetes prevention, or wellness in Doha.</p>
     </div>""", unsafe_allow_html=True)
